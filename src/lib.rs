@@ -1,0 +1,63 @@
+mod ffi;
+
+pub mod discovery;
+pub mod receiver;
+pub mod sender;
+pub mod settings;
+pub mod types;
+
+use std::fmt;
+
+pub use discovery::Discovery;
+pub use receiver::{Receiver, SenderInfo, Statistics, Tally};
+pub use sender::{OutgoingFrame, Sender};
+pub use settings::{
+    set_logging_filename, settings_get_integer, settings_get_string, settings_set_integer,
+    settings_set_string,
+};
+pub use types::{
+    Codec, ColorSpace, FrameRef, FrameType, PreferredVideoFormat, Quality, ReceiveFlags, Timeout,
+    VideoFlags, VideoFrame,
+};
+
+#[derive(Debug)]
+pub enum OmtError {
+    NullHandle,
+    InvalidCString,
+}
+
+impl fmt::Display for OmtError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OmtError::NullHandle => write!(f, "libomt returned a null handle"),
+            OmtError::InvalidCString => write!(f, "string contained an interior null byte"),
+        }
+    }
+}
+
+impl std::error::Error for OmtError {}
+
+impl Codec {
+    pub fn fourcc_string(self) -> String {
+        fourcc_to_string(self.fourcc())
+    }
+}
+
+pub fn fourcc_to_string(fourcc: u32) -> String {
+    let bytes = [
+        (fourcc & 0xff) as u8,
+        ((fourcc >> 8) & 0xff) as u8,
+        ((fourcc >> 16) & 0xff) as u8,
+        ((fourcc >> 24) & 0xff) as u8,
+    ];
+    bytes
+        .iter()
+        .map(|&b| {
+            if (32..=126).contains(&b) {
+                b as char
+            } else {
+                '.'
+            }
+        })
+        .collect()
+}
