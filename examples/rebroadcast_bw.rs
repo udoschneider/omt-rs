@@ -73,62 +73,65 @@ fn main() {
     };
 
     loop {
-        for frame_result in receiver.frames(FrameType::Video, Timeout::from_millis(1000)) {
-            match frame_result {
-                Ok(frame_ref) => {
-                    if let Some(video) = frame_ref.video() {
-                        let timestamp = frame_ref.timestamp();
-                        let (fr_n, fr_d) = video.frame_rate();
-                        let aspect_ratio = video.aspect_ratio();
-                        let color_space = video.color_space();
-                        let flags = video.flags();
-                        let stride = video.stride();
-                        let width = video.width();
-                        let height = video.height();
+        match receiver.receive(FrameType::Video, Timeout::from_millis(1000)) {
+            Ok(Some(frame_ref)) => {
+                if let Some(video) = frame_ref.video() {
+                    let timestamp = frame_ref.timestamp();
+                    let (fr_n, fr_d) = video.frame_rate();
+                    let aspect_ratio = video.aspect_ratio();
+                    let color_space = video.color_space();
+                    let flags = video.flags();
+                    let stride = video.stride();
+                    let width = video.width();
+                    let height = video.height();
 
-                        let data = match video.data() {
-                            Some(d) => d,
-                            None => continue,
-                        };
-
-                        let outgoing = match frame_ref.codec() {
-                            Codec::BGRA => bw_from_bgra(
-                                data,
-                                width,
-                                height,
-                                stride,
-                                flags,
-                                fr_n,
-                                fr_d,
-                                aspect_ratio,
-                                color_space,
-                                timestamp,
-                            ),
-                            Codec::UYVY => bw_from_uyvy(
-                                data,
-                                width,
-                                height,
-                                stride,
-                                flags,
-                                fr_n,
-                                fr_d,
-                                aspect_ratio,
-                                color_space,
-                                timestamp,
-                            ),
-                            _ => None,
-                        };
-
-                        if let Some(mut out) = outgoing {
-                            let _ = sender.send(&mut out);
+                    let data = match video.data() {
+                        Some(d) => d,
+                        None => {
+                            std::thread::sleep(Duration::from_millis(10));
+                            continue;
                         }
+                    };
+
+                    let outgoing = match frame_ref.codec() {
+                        Codec::BGRA => bw_from_bgra(
+                            data,
+                            width,
+                            height,
+                            stride,
+                            flags,
+                            fr_n,
+                            fr_d,
+                            aspect_ratio,
+                            color_space,
+                            timestamp,
+                        ),
+                        Codec::UYVY => bw_from_uyvy(
+                            data,
+                            width,
+                            height,
+                            stride,
+                            flags,
+                            fr_n,
+                            fr_d,
+                            aspect_ratio,
+                            color_space,
+                            timestamp,
+                        ),
+                        _ => None,
+                    };
+
+                    if let Some(mut out) = outgoing {
+                        let _ = sender.send(&mut out);
                     }
                 }
-                Err(err) => {
-                    eprintln!("Receive error: {}", err);
-                    std::thread::sleep(Duration::from_millis(200));
-                    break;
-                }
+            }
+            Ok(None) => {
+                // Timeout: no frame this cycle.
+            }
+            Err(err) => {
+                eprintln!("Receive error: {}", err);
+                std::thread::sleep(Duration::from_millis(200));
             }
         }
         std::thread::sleep(Duration::from_millis(10));

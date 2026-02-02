@@ -30,6 +30,12 @@ impl Timeout {
     pub fn as_duration(self) -> Duration {
         self.0
     }
+
+    pub fn as_millis_i32(self) -> i32 {
+        self.0
+            .as_millis()
+            .min(u128::from(i32::MAX as u32)) as i32
+    }
 }
 
 impl From<Duration> for Timeout {
@@ -60,6 +66,17 @@ impl From<ffi::OMTFrameType> for FrameType {
             ffi::OMTFrameType::Video => FrameType::Video,
             ffi::OMTFrameType::Audio => FrameType::Audio,
             _ => FrameType::None,
+        }
+    }
+}
+
+impl From<FrameType> for ffi::OMTFrameType {
+    fn from(value: FrameType) -> Self {
+        match value {
+            FrameType::Metadata => ffi::OMTFrameType::Metadata,
+            FrameType::Video => ffi::OMTFrameType::Video,
+            FrameType::Audio => ffi::OMTFrameType::Audio,
+            FrameType::None => ffi::OMTFrameType::None,
         }
     }
 }
@@ -137,6 +154,17 @@ impl From<ffi::OMTQuality> for Quality {
     }
 }
 
+impl From<Quality> for ffi::OMTQuality {
+    fn from(value: Quality) -> Self {
+        match value {
+            Quality::Low => ffi::OMTQuality::Low,
+            Quality::Medium => ffi::OMTQuality::Medium,
+            Quality::High => ffi::OMTQuality::High,
+            Quality::Default => ffi::OMTQuality::Default,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 /// Color space metadata for video frames.
 pub enum ColorSpace {
@@ -151,6 +179,16 @@ impl From<ffi::OMTColorSpace> for ColorSpace {
             ffi::OMTColorSpace::BT601 => ColorSpace::BT601,
             ffi::OMTColorSpace::BT709 => ColorSpace::BT709,
             _ => ColorSpace::Undefined,
+        }
+    }
+}
+
+impl From<ColorSpace> for ffi::OMTColorSpace {
+    fn from(value: ColorSpace) -> Self {
+        match value {
+            ColorSpace::BT601 => ffi::OMTColorSpace::BT601,
+            ColorSpace::BT709 => ffi::OMTColorSpace::BT709,
+            ColorSpace::Undefined => ffi::OMTColorSpace::Undefined,
         }
     }
 }
@@ -202,6 +240,21 @@ impl From<ffi::OMTPreferredVideoFormat> for PreferredVideoFormat {
             }
             ffi::OMTPreferredVideoFormat::P216 => PreferredVideoFormat::P216,
             _ => PreferredVideoFormat::UYVY,
+        }
+    }
+}
+
+impl From<PreferredVideoFormat> for ffi::OMTPreferredVideoFormat {
+    fn from(value: PreferredVideoFormat) -> Self {
+        match value {
+            PreferredVideoFormat::UYVYorBGRA => ffi::OMTPreferredVideoFormat::UYVYorBGRA,
+            PreferredVideoFormat::BGRA => ffi::OMTPreferredVideoFormat::BGRA,
+            PreferredVideoFormat::UYVYorUYVA => ffi::OMTPreferredVideoFormat::UYVYorUYVA,
+            PreferredVideoFormat::UYVYorUYVAorP216orPA16 => {
+                ffi::OMTPreferredVideoFormat::UYVYorUYVAorP216orPA16
+            }
+            PreferredVideoFormat::P216 => ffi::OMTPreferredVideoFormat::P216,
+            PreferredVideoFormat::UYVY => ffi::OMTPreferredVideoFormat::UYVY,
         }
     }
 }

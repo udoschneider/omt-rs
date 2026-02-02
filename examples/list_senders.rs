@@ -85,10 +85,9 @@ fn main() {
             }
         }
 
-        // Use the iterator-based frame stream to fetch a single sample frame.
-        let mut frames = receiver.frames(FrameType::Video, Timeout::from_millis(1000));
-        match frames.next() {
-            Some(Ok(frame)) => {
+        // Fetch a single sample frame.
+        match receiver.receive(FrameType::Video, Timeout::from_millis(1000)) {
+            Ok(Some(frame)) => {
                 if let Some(video) = frame.video() {
                     let codec = fourcc_to_string(frame.codec().fourcc());
                     let flags = describe_video_flags(video.flags());
@@ -108,11 +107,11 @@ fn main() {
                     println!("  -> No video frame received (non-video).");
                 }
             }
-            Some(Err(err)) => {
-                println!("  -> Failed to receive frame: {}", err);
-            }
-            None => {
+            Ok(None) => {
                 println!("  -> No video frame received (timeout).");
+            }
+            Err(err) => {
+                println!("  -> Failed to receive frame: {}", err);
             }
         }
     }

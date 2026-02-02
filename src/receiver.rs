@@ -6,10 +6,10 @@
 //! See https://github.com/openmediatransport for protocol background.
 
 use crate::ffi;
+use crate::ffi_utils::c_char_array_to_string;
 use crate::types::{FrameRef, FrameType, PreferredVideoFormat, Quality, ReceiveFlags, Timeout};
 use crate::OmtError;
 use std::ffi::CString;
-use std::os::raw::c_char;
 use std::ptr::NonNull;
 
 #[derive(Clone, Debug, Default)]
@@ -19,7 +19,7 @@ pub struct Tally {
     pub program: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 /// Optional metadata describing the sender device/software.
 pub struct SenderInfo {
     pub product_name: String,
@@ -30,7 +30,7 @@ pub struct SenderInfo {
     pub reserved3: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 /// Transport and codec statistics for audio or video streams.
 pub struct Statistics {
     pub bytes_sent: i64,
@@ -51,11 +51,7 @@ pub struct Statistics {
     pub reserved7: i64,
 }
 
-fn c_char_array_to_string(arr: &[c_char]) -> String {
-    let len = arr.iter().position(|&c| c == 0).unwrap_or(arr.len());
-    let bytes: Vec<u8> = arr[..len].iter().map(|&c| c as u8).collect();
-    String::from_utf8_lossy(&bytes).to_string()
-}
+
 
 fn sender_info_from_ffi(info: &ffi::OMTSenderInfo) -> Option<SenderInfo> {
     let product_name = c_char_array_to_string(&info.ProductName);
@@ -86,26 +82,7 @@ fn sender_info_from_ffi(info: &ffi::OMTSenderInfo) -> Option<SenderInfo> {
     }
 }
 
-fn stats_from_ffi(stats: &ffi::OMTStatistics) -> Statistics {
-    Statistics {
-        bytes_sent: stats.BytesSent as i64,
-        bytes_received: stats.BytesReceived as i64,
-        bytes_sent_since_last: stats.BytesSentSinceLast as i64,
-        bytes_received_since_last: stats.BytesReceivedSinceLast as i64,
-        frames: stats.Frames as i64,
-        frames_since_last: stats.FramesSinceLast as i64,
-        frames_dropped: stats.FramesDropped as i64,
-        codec_time: stats.CodecTime as i64,
-        codec_time_since_last: stats.CodecTimeSinceLast as i64,
-        reserved1: stats.Reserved1 as i64,
-        reserved2: stats.Reserved2 as i64,
-        reserved3: stats.Reserved3 as i64,
-        reserved4: stats.Reserved4 as i64,
-        reserved5: stats.Reserved5 as i64,
-        reserved6: stats.Reserved6 as i64,
-        reserved7: stats.Reserved7 as i64,
-    }
-}
+
 
 fn tally_to_ffi(tally: &Tally) -> ffi::OMTTally {
     ffi::OMTTally {
@@ -114,54 +91,17 @@ fn tally_to_ffi(tally: &Tally) -> ffi::OMTTally {
     }
 }
 
-fn tally_from_ffi(tally: &ffi::OMTTally) -> Tally {
-    Tally {
-        preview: tally.preview != 0,
-        program: tally.program != 0,
-    }
-}
 
-fn frame_type_to_ffi(frame_type: FrameType) -> ffi::OMTFrameType {
-    match frame_type {
-        FrameType::Metadata => ffi::OMTFrameType::Metadata,
-        FrameType::Video => ffi::OMTFrameType::Video,
-        FrameType::Audio => ffi::OMTFrameType::Audio,
-        FrameType::None => ffi::OMTFrameType::None,
-    }
-}
 
-fn preferred_format_to_ffi(format: PreferredVideoFormat) -> ffi::OMTPreferredVideoFormat {
-    match format {
-        PreferredVideoFormat::UYVYorBGRA => ffi::OMTPreferredVideoFormat::UYVYorBGRA,
-        PreferredVideoFormat::BGRA => ffi::OMTPreferredVideoFormat::BGRA,
-        PreferredVideoFormat::UYVYorUYVA => ffi::OMTPreferredVideoFormat::UYVYorUYVA,
-        PreferredVideoFormat::UYVYorUYVAorP216orPA16 => {
-            ffi::OMTPreferredVideoFormat::UYVYorUYVAorP216orPA16
-        }
-        PreferredVideoFormat::P216 => ffi::OMTPreferredVideoFormat::P216,
-        PreferredVideoFormat::UYVY => ffi::OMTPreferredVideoFormat::UYVY,
-    }
-}
 
-fn receive_flags_to_ffi(flags: ReceiveFlags) -> ffi::OMTReceiveFlags {
-    i32::from(flags)
-}
 
-fn quality_to_ffi(quality: Quality) -> ffi::OMTQuality {
-    match quality {
-        Quality::Low => ffi::OMTQuality::Low,
-        Quality::Medium => ffi::OMTQuality::Medium,
-        Quality::High => ffi::OMTQuality::High,
-        Quality::Default => ffi::OMTQuality::Default,
-    }
-}
 
-fn timeout_ms(timeout: Timeout) -> i32 {
-    timeout
-        .as_duration()
-        .as_millis()
-        .min(u128::from(i32::MAX as u32)) as i32
-}
+
+
+
+
+
+
 
 /// High-level receiver handle. Drops cleanly by releasing the native instance.
 pub struct Receiver {
@@ -187,9 +127,9 @@ impl Receiver {
         let handle = unsafe {
             ffi::omt_receive_create(
                 c_address.as_ptr(),
-                frame_type_to_ffi(frame_types),
-                preferred_format_to_ffi(format),
-                receive_flags_to_ffi(flags),
+                frame_types.into(),
+                format.into(),
+                i32::from(flags),
             )
         };
         let handle = NonNull::new(handle).ok_or(OmtError::NullHandle)?;
@@ -197,6 +137,9 @@ impl Receiver {
     }
 
     /// Receives the next frame of the requested type within the timeout.
+    ///
+    /// Call this in a loop to drive continuous receive since the iterator API
+    /// was removed.
     ///
     /// Returned frames are valid until the next `receive` call on this receiver
     /// (matching the `libomt.h` lifetime rules for `omt_receive`).
@@ -206,7 +149,7 @@ impl Receiver {
         timeout: Timeout,
     ) -> Result<Option<FrameRef<'_>>, OmtError> {
         let frame_ptr = unsafe {
-            ffi::omt_receive(self.handle.as_ptr(), frame_type_to_ffi(frame_types), timeout_ms(timeout))
+            ffi::omt_receive(self.handle.as_ptr(), frame_types.into(), timeout.as_millis_i32())
         };
         if frame_ptr.is_null() {
             Ok(None)
@@ -215,21 +158,7 @@ impl Receiver {
         }
     }
 
-    /// Returns an iterator that yields frames until a timeout occurs.
-    ///
-    /// Each iteration borrows the receiver, preventing re-entry while a frame
-    /// reference is alive.
-    pub fn frames<'a>(
-        &'a mut self,
-        frame_types: FrameType,
-        timeout: Timeout,
-    ) -> ReceiverFrames<'a> {
-        ReceiverFrames {
-            receiver: self,
-            frame_types,
-            timeout,
-        }
-    }
+
 
     /// Sends XML metadata back to the sender (bi-directional metadata channel).
     ///
@@ -261,22 +190,22 @@ impl Receiver {
         let result = unsafe {
             ffi::omt_receive_gettally(
                 self.handle.as_ptr() as *mut ffi::omt_send_t,
-                timeout_ms(timeout),
+                timeout.as_millis_i32(),
                 &mut raw,
             ) as i32
         };
-        *tally = tally_from_ffi(&raw);
+        *tally = Tally::from(&raw);
         result
     }
 
     /// Updates receiver flags (e.g., preview or compressed stream delivery).
     pub fn set_flags(&self, flags: ReceiveFlags) {
-        unsafe { ffi::omt_receive_setflags(self.handle.as_ptr(), receive_flags_to_ffi(flags)) };
+        unsafe { ffi::omt_receive_setflags(self.handle.as_ptr(), i32::from(flags)) };
     }
 
     /// Suggests a preferred quality to the sender when it is in Default mode.
     pub fn set_suggested_quality(&self, quality: Quality) {
-        unsafe { ffi::omt_receive_setsuggestedquality(self.handle.as_ptr(), quality_to_ffi(quality)) };
+        unsafe { ffi::omt_receive_setsuggestedquality(self.handle.as_ptr(), quality.into()) };
     }
 
     /// Fetches optional metadata about the connected sender.
@@ -297,38 +226,18 @@ impl Receiver {
     pub fn get_video_statistics(&self) -> Statistics {
         let mut stats = unsafe { std::mem::zeroed::<ffi::OMTStatistics>() };
         unsafe { ffi::omt_receive_getvideostatistics(self.handle.as_ptr(), &mut stats) };
-        stats_from_ffi(&stats)
+        Statistics::from(&stats)
     }
 
     /// Returns audio stream statistics for this receiver.
     pub fn get_audio_statistics(&self) -> Statistics {
         let mut stats = unsafe { std::mem::zeroed::<ffi::OMTStatistics>() };
         unsafe { ffi::omt_receive_getaudiostatistics(self.handle.as_ptr(), &mut stats) };
-        stats_from_ffi(&stats)
+        Statistics::from(&stats)
     }
 }
 
-/// Iterator over received frames for a receiver.
-pub struct ReceiverFrames<'a> {
-    receiver: &'a mut Receiver,
-    frame_types: FrameType,
-    timeout: Timeout,
-}
 
-impl<'a> Iterator for ReceiverFrames<'a> {
-    type Item = Result<FrameRef<'a>, OmtError>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.receiver.receive(self.frame_types, self.timeout) {
-            Ok(Some(frame)) => {
-                let frame = unsafe { std::mem::transmute::<FrameRef<'_>, FrameRef<'a>>(frame) };
-                Some(Ok(frame))
-            }
-            Ok(None) => None,
-            Err(err) => Some(Err(err)),
-        }
-    }
-}
 
 impl Drop for Receiver {
     fn drop(&mut self) {

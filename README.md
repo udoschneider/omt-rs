@@ -46,7 +46,7 @@ On macOS/Linux you may need to set:
 
 The crate links with:
 
-```/dev/null/link-attr.rs#L1-1
+```
 #[link(name = "omt")]
 ```
 
@@ -58,7 +58,7 @@ So the linker expects `libomt` to be available as a shared library.
 
 From the project root:
 
-```/dev/null/commands.sh#L1-1
+```
 cargo build
 ```
 
@@ -68,7 +68,7 @@ cargo build
 
 ### Discover sources
 
-```/dev/null/example.rs#L1-9
+```rust
 use libomt::Discovery;
 
 let addresses = Discovery::get_addresses();
@@ -79,7 +79,7 @@ for addr in addresses {
 
 ### Receive video
 
-```/dev/null/example.rs#L1-19
+```rust
 use libomt::{Receiver, FrameType, PreferredVideoFormat, ReceiveFlags, Timeout};
 
 let mut receiver = Receiver::create(
@@ -95,36 +95,11 @@ if let Ok(Some(frame)) = receiver.receive(FrameType::Video, Timeout::from_millis
 }
 ```
 
-### Receive video (iterator)
 
-```/dev/null/example.rs#L1-22
-use libomt::{Receiver, FrameType, PreferredVideoFormat, ReceiveFlags, Timeout};
-
-let mut receiver = Receiver::create(
-    "HOST (Sender Name)",
-    FrameType::Video,
-    PreferredVideoFormat::UYVYorBGRA,
-    ReceiveFlags::NONE,
-).expect("create receiver");
-
-for frame in receiver.frames(FrameType::Video, Timeout::from_millis(1000)) {
-    match frame {
-        Ok(frame) => {
-            if let Some(video) = frame.video() {
-                println!("{}x{}", video.width(), video.height());
-            }
-        }
-        Err(err) => {
-            eprintln!("receive error: {}", err);
-            break;
-        }
-    }
-}
-```
 
 ### Send video
 
-```/dev/null/example.rs#L1-23
+```rust
 use libomt::{Sender, OutgoingFrame, Codec, ColorSpace, Quality, VideoFlags};
 
 let sender = Sender::create("My Sender", Quality::Default).expect("create sender");
@@ -151,7 +126,7 @@ sender.send(&mut frame);
 
 ### Metadata
 
-```/dev/null/example.rs#L1-12
+```rust
 use libomt::OutgoingFrame;
 
 let mut metadata = OutgoingFrame::metadata_xml(
@@ -162,27 +137,11 @@ let mut metadata = OutgoingFrame::metadata_xml(
 // Send metadata with Sender::send(...)
 ```
 
-### Metadata (iterator)
 
-```/dev/null/example.rs#L1-18
-use libomt::{Sender, Timeout};
 
-let mut sender = Sender::create("My Sender", Default::default()).expect("create sender");
+### Sender metadata
 
-for frame in sender.metadata_frames(Timeout::from_secs(1)) {
-    match frame {
-        Ok(frame) => println!("metadata at {}", frame.timestamp()),
-        Err(err) => {
-            eprintln!("metadata error: {}", err);
-            break;
-        }
-    }
-}
-```
-
-### Sender metadata (iterator)
-
-```/dev/null/example.rs#L1-24
+```rust
 use libomt::{Discovery, FrameType, PreferredVideoFormat, ReceiveFlags, Receiver, Timeout};
 
 let addresses = Discovery::addresses_with_backoff(
@@ -224,8 +183,7 @@ Key APIs:
 - `Discovery::get_addresses() -> Vec<String>`
 - `Discovery::get_addresses_with_options(attempts, delay: Duration, debug)`
 - `Discovery::get_addresses_with_backoff(attempts, initial_delay: Duration, max_delay: Duration, backoff_factor, debug)`
-- `Discovery::addresses() -> impl Iterator<Item = String>`
-- `Discovery::addresses_with_backoff(attempts, initial_delay: Duration, max_delay: Duration, backoff_factor, debug) -> impl Iterator<Item = String>`
+
 
 Discovery uses DNS‑SD (Bonjour/Avahi) or a discovery server depending on your network setup.
 
@@ -238,7 +196,6 @@ Key APIs:
 
 - `Receiver::create(address, frame_types, preferred_format, flags) -> Result<Receiver, OmtError>`
 - `Receiver::receive(frame_types, timeout: Timeout) -> Result<Option<FrameRef>, OmtError>`
-- `Receiver::frames(frame_types, timeout: Timeout) -> impl Iterator<Item = Result<FrameRef, OmtError>>`
 - `Receiver::send_metadata_xml(xml, timestamp) -> Result<i32, OmtError>`
 - `Receiver::set_tally(tally)`
 - `Receiver::get_tally(timeout: Timeout, &mut tally) -> i32`
@@ -267,7 +224,6 @@ Key APIs:
 - `Sender::send(&mut OutgoingFrame) -> i32`
 - `Sender::connections() -> i32`
 - `Sender::receive_metadata(timeout: Timeout) -> Result<Option<FrameRef>, OmtError>`
-- `Sender::metadata_frames(timeout: Timeout) -> impl Iterator<Item = Result<FrameRef, OmtError>>`
 - `Sender::set_sender_info(&SenderInfo)`
 - `Sender::add_connection_metadata(metadata)`
 - `Sender::clear_connection_metadata()`
@@ -308,7 +264,7 @@ Received frames are exposed through `FrameRef` and `VideoFrame`.
 
 The API uses `Timeout` for receive timeouts, with convenience constructors:
 
-```/dev/null/example.rs#L1-6
+```rust
 use libomt::Timeout;
 
 let t1 = Timeout::from_millis(1000);
@@ -356,7 +312,7 @@ Senders select a quality level with `Quality`:
 
 When a sender uses `Default`, it starts at **Medium** and allows receivers to suggest a preferred quality. The sender then chooses the **highest suggested quality** across connected receivers. If a receiver is set to `Default`, it defers to other receivers’ suggestions.
 
-```/dev/null/example.rs#L1-5
+```rust
 use libomt::{Receiver, Quality};
 
 receiver.set_suggested_quality(Quality::High);
@@ -393,7 +349,7 @@ This wrapper is safe to use as long as you follow these rules:
 
 ## Examples
 
-This project includes runnable examples under `examples/` that use the iterator-based discovery and receive helpers:
+This project includes runnable examples under `examples/` that use discovery and direct receive calls:
 
 - `list_senders` discovers sources and prints their video format.
 - `view_stream` renders frames to the terminal.
@@ -401,7 +357,7 @@ This project includes runnable examples under `examples/` that use the iterator-
 
 Run them from the project root:
 
-```/dev/null/commands.sh#L1-3
+```
 cargo run --example list_senders
 cargo run --example view_stream
 cargo run --example rebroadcast_bw
@@ -411,7 +367,7 @@ cargo run --example rebroadcast_bw
 
 Example output:
 
-```/dev/null/output.txt#L1-4
+```
 Discovered 2 sender(s):
 - HOST1 (Camera 1)
   -> Video: 1920x1080 @ 60/1 fps, codec UYVY, flags [None], colorspace BT709

@@ -71,25 +71,22 @@ fn main() {
     let mut last_frame = Instant::now() - frame_interval;
 
     loop {
-        // Use the iterator-based frame stream to drive playback with timeouts.
-        for frame_result in receiver.frames(FrameType::Video, Timeout::from_millis(1000)) {
-            match frame_result {
-                Ok(frame) => {
-                    if let Some(image) = frame_to_image(&frame) {
-                        let _ = viuer::print(&image, &config);
+        match receiver.receive(FrameType::Video, Timeout::from_millis(1000)) {
+            Ok(Some(frame)) => {
+                if let Some(image) = frame_to_image(&frame) {
+                    let _ = viuer::print(&image, &config);
 
-                        let elapsed = last_frame.elapsed();
-                        if elapsed < frame_interval {
-                            std::thread::sleep(frame_interval - elapsed);
-                        }
-                        last_frame = Instant::now();
+                    let elapsed = last_frame.elapsed();
+                    if elapsed < frame_interval {
+                        std::thread::sleep(frame_interval - elapsed);
                     }
+                    last_frame = Instant::now();
                 }
-                Err(err) => {
-                    eprintln!("Receive error: {}", err);
-                    std::thread::sleep(Duration::from_millis(200));
-                    break;
-                }
+            }
+            Ok(None) => {}
+            Err(err) => {
+                eprintln!("Receive error: {}", err);
+                std::thread::sleep(Duration::from_millis(200));
             }
         }
         std::thread::sleep(Duration::from_millis(50));

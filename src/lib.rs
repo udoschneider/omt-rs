@@ -1,4 +1,5 @@
 mod ffi;
+mod ffi_utils;
 
 pub mod discovery;
 pub mod receiver;
