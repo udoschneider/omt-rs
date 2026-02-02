@@ -1,0 +1,86 @@
+# Open Media Transport (OMT) Metadata Specification Document 1.0
+
+This document contains recommended metadata specifications for use with Open Media Transport.
+
+If you have a specification you would like to see listed here, submit a request under this repositories Issues section.
+
+## Contents
+
+* [Web Management](#web-management)
+* [PTZ Control](#ptz-control)
+* [Ancillary Data](#ancillary-data)
+* [Metadata Grouping](#metadata-grouping)
+
+## Web Management
+
+This defines a web management interface for a sender device.
+
+Receivers should implement a way to browse to this address on request.
+
+```xml
+<OMTWeb URL="http://x.x.x.x/" />
+```
+
+## PTZ Control
+
+This defines what PTZ protocol is available for a PTZ camera device.
+The following supported protocols are currently defined:
+
+### Sony VISCA over IP
+
+This is the standard VISCA over IP udp protocol implemented separately to OMT.
+
+```xml
+<OMTPTZ Protocol="VISCAoverIP" URL="visca://x.x.x.x:port"  />
+```
+
+### Sony VISCA (Inband)
+
+This is the standard VISCA over IP protocol encapsulated within OMT metadata.
+Sequence is the same sequence number as used in the original protocol messages.
+
+**Command** 
+
+This is a command sent from controller to camera in hexadecimal format. 
+
+```xml
+<OMTPTZ Protocol="VISCA" Sequence="22" Command="8101040700FF" />
+```
+
+**Reply**
+
+This is a reply from camera sent back to controller and is in hexadecimal format.
+
+```xml
+<OMTPTZ Protocol="VISCA" Sequence="22" Reply="0011AABBCC" />
+```
+
+## Ancillary Data
+
+The following is a proposal for sending and receiving raw SDI ancillary data over OMT.
+This should ideally be sent in per frame metadata with grouping as per **Metadata Grouping** below.
+
+Payload is in hexadecimal format.
+
+```xml
+<AncillaryData xmns="urn:anc:1.0">
+<Packet did="45" sdid="01" field="1" line="21" horizOffset="0" st2110Channel="0" pts90k="32109876" link="A" stream="VANC">
+<Payload>81010A011E0000</Payload>
+</Packet>
+</AncillaryData>
+```
+## Metadata Grouping
+
+To send multiple disparate pieces of metadata within a single frame, use the following grouping syntax.
+
+```xml
+<OMTGroup>
+<OMTPTZ Protocol="VISCA" Sequence="22" Reply="0011AABBCC" />
+<AncillaryData xmns="urn:anc:1.0">
+<Packet did="45" sdid="01" field="1" line="21" horizOffset="0" st2110Channel="0" pts90k="32109876" link="A" stream="VANC">
+<Payload>81010A011E0000</Payload>
+</Packet>
+</AncillaryData>
+</OMTGroup>
+```
+Since grouping may not exist when only a single element is sent, it is recommended that any parsing code look for both formats.
