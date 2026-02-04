@@ -159,7 +159,7 @@ impl Receiver {
         let c_xml = CString::new(xml).map_err(|_| OmtError::InvalidCString)?;
         let mut frame: ffi::OMTMediaFrame = unsafe { std::mem::zeroed() };
         frame.Type = ffi::OMTFrameType::Metadata;
-        frame.Timestamp = timestamp as i64;
+        frame.Timestamp = timestamp;
         frame.Data = c_xml.as_ptr() as *mut _;
         frame.DataLength = c_xml.as_bytes_with_nul().len() as i32;
 

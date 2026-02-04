@@ -33,22 +33,22 @@ pub(crate) fn write_c_char_array(dst: &mut [c_char], value: &str) {
 impl From<&ffi::OMTStatistics> for Statistics {
     fn from(stats: &ffi::OMTStatistics) -> Self {
         Statistics {
-            bytes_sent: stats.BytesSent as i64,
-            bytes_received: stats.BytesReceived as i64,
-            bytes_sent_since_last: stats.BytesSentSinceLast as i64,
-            bytes_received_since_last: stats.BytesReceivedSinceLast as i64,
-            frames: stats.Frames as i64,
-            frames_since_last: stats.FramesSinceLast as i64,
-            frames_dropped: stats.FramesDropped as i64,
-            codec_time: stats.CodecTime as i64,
-            codec_time_since_last: stats.CodecTimeSinceLast as i64,
-            reserved1: stats.Reserved1 as i64,
-            reserved2: stats.Reserved2 as i64,
-            reserved3: stats.Reserved3 as i64,
-            reserved4: stats.Reserved4 as i64,
-            reserved5: stats.Reserved5 as i64,
-            reserved6: stats.Reserved6 as i64,
-            reserved7: stats.Reserved7 as i64,
+            bytes_sent: stats.BytesSent,
+            bytes_received: stats.BytesReceived,
+            bytes_sent_since_last: stats.BytesSentSinceLast,
+            bytes_received_since_last: stats.BytesReceivedSinceLast,
+            frames: stats.Frames,
+            frames_since_last: stats.FramesSinceLast,
+            frames_dropped: stats.FramesDropped,
+            codec_time: stats.CodecTime,
+            codec_time_since_last: stats.CodecTimeSinceLast,
+            reserved1: stats.Reserved1,
+            reserved2: stats.Reserved2,
+            reserved3: stats.Reserved3,
+            reserved4: stats.Reserved4,
+            reserved5: stats.Reserved5,
+            reserved6: stats.Reserved6,
+            reserved7: stats.Reserved7,
         }
     }
 }

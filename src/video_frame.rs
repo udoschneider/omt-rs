@@ -13,19 +13,19 @@ impl<'a> VideoFrame<'a> {
     }
 
     pub fn width(&self) -> i32 {
-        self.raw.Width as i32
+        self.raw.Width
     }
 
     pub fn height(&self) -> i32 {
-        self.raw.Height as i32
+        self.raw.Height
     }
 
     pub fn stride(&self) -> i32 {
-        self.raw.Stride as i32
+        self.raw.Stride
     }
 
     pub fn frame_rate(&self) -> (i32, i32) {
-        (self.raw.FrameRateN as i32, self.raw.FrameRateD as i32)
+        (self.raw.FrameRateN, self.raw.FrameRateD)
     }
 
     pub fn aspect_ratio(&self) -> f32 {
@@ -149,6 +149,7 @@ impl<'a> VideoFrame<'a> {
         Some(out)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn data_bgra(
         &self,
         data: &[u8],
@@ -202,6 +203,7 @@ impl<'a> VideoFrame<'a> {
         Some(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn data_uyvy_yuy2(
         &self,
         data: &[u8],
@@ -293,6 +295,7 @@ impl<'a> VideoFrame<'a> {
         Some(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn data_uyva(
         &self,
         data: &[u8],
@@ -425,6 +428,7 @@ impl<'a> VideoFrame<'a> {
         Some(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn data_nv12(
         &self,
         data: &[u8],
@@ -449,8 +453,7 @@ impl<'a> VideoFrame<'a> {
         for y in 0..height {
             let y_row = &y_plane[y * stride..y * stride + width];
             let uv_row = &uv_plane[(y / 2) * stride..(y / 2) * stride + width];
-            for x in 0..width {
-                let y0 = y_row[x];
+            for (x, &y0) in y_row.iter().enumerate().take(width) {
                 let uv_idx = (x / 2) * 2;
                 let u = uv_row[uv_idx];
                 let v = uv_row[uv_idx + 1];
@@ -475,6 +478,7 @@ impl<'a> VideoFrame<'a> {
         Some(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn data_yv12(
         &self,
         data: &[u8],
@@ -531,6 +535,7 @@ impl<'a> VideoFrame<'a> {
         Some(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn data_p216_pa16(
         &self,
         data: &[u8],

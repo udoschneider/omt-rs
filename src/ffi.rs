@@ -18,6 +18,7 @@ pub enum OMTFrameType {
 
 #[repr(i32)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum OMTCodec {
     VMX1 = 0x31584D56,
     FPA1 = 0x31415046,
@@ -61,6 +62,7 @@ pub const OMT_VIDEO_FLAGS_HIGH_BIT_DEPTH: OMTVideoFlags = 16;
 
 #[repr(i32)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum OMTPreferredVideoFormat {
     UYVY = 0,
     UYVYorBGRA = 1,

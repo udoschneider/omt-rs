@@ -27,6 +27,7 @@ impl OutgoingFrame {
     /// The `data` buffer must match the chosen `codec`, `width`, `height`, and `stride`.
     /// Timestamps use the OMT timebase (10,000,000 ticks per second). Use `timestamp = -1`
     /// to let OMT generate timestamps and pace frames based on the frame rate.
+    #[allow(clippy::too_many_arguments)]
     pub fn video(
         codec: Codec,
         width: i32,
@@ -45,7 +46,7 @@ impl OutgoingFrame {
 
         let frame = ffi::OMTMediaFrame {
             Type: ffi::OMTFrameType::Video,
-            Timestamp: timestamp as i64,
+            Timestamp: timestamp,
             Codec: codec_to_ffi(codec),
             Width: width,
             Height: height,
@@ -90,7 +91,7 @@ impl OutgoingFrame {
 
         let frame = ffi::OMTMediaFrame {
             Type: ffi::OMTFrameType::Audio,
-            Timestamp: timestamp as i64,
+            Timestamp: timestamp,
             Codec: codec_to_ffi(codec),
             Width: 0,
             Height: 0,
@@ -127,7 +128,7 @@ impl OutgoingFrame {
 
         let frame = ffi::OMTMediaFrame {
             Type: ffi::OMTFrameType::Metadata,
-            Timestamp: timestamp as i64,
+            Timestamp: timestamp,
             Codec: ffi::OMTCodec::VMX1,
             Width: 0,
             Height: 0,

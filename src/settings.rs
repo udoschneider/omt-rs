@@ -59,6 +59,6 @@ pub fn settings_get_integer(name: &str) -> Option<i32> {
 /// Sets an integer setting by name.
 pub fn settings_set_integer(name: &str, value: i32) -> Result<(), OmtError> {
     let c_name = CString::new(name).map_err(|_| OmtError::InvalidCString)?;
-    unsafe { ffi::omt_settings_set_integer(c_name.as_ptr(), value as i32) };
+    unsafe { ffi::omt_settings_set_integer(c_name.as_ptr(), value) };
     Ok(())
 }

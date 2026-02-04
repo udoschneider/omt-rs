@@ -299,7 +299,7 @@ bitflags! {
 
 impl From<ffi::OMTVideoFlags> for VideoFlags {
     fn from(value: ffi::OMTVideoFlags) -> Self {
-        VideoFlags::from_bits_truncate(value as i32)
+        VideoFlags::from_bits_truncate(value)
     }
 }
 
@@ -363,7 +363,7 @@ bitflags! {
 
 impl From<ffi::OMTReceiveFlags> for ReceiveFlags {
     fn from(value: ffi::OMTReceiveFlags) -> Self {
-        ReceiveFlags::from_bits_truncate(value as i32)
+        ReceiveFlags::from_bits_truncate(value)
     }
 }
 
@@ -392,7 +392,7 @@ impl<'a> FrameRef<'a> {
 
     /// Returns the frame timestamp in OMT ticks (10,000,000 per second).
     pub fn timestamp(&self) -> i64 {
-        self.raw.Timestamp as i64
+        self.raw.Timestamp
     }
 
     pub fn codec(&self) -> Codec {

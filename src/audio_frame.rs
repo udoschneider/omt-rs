@@ -11,15 +11,15 @@ impl<'a> AudioFrame<'a> {
     }
 
     pub fn sample_rate(&self) -> i32 {
-        self.raw.SampleRate as i32
+        self.raw.SampleRate
     }
 
     pub fn channels(&self) -> i32 {
-        self.raw.Channels as i32
+        self.raw.Channels
     }
 
     pub fn samples_per_channel(&self) -> i32 {
-        self.raw.SamplesPerChannel as i32
+        self.raw.SamplesPerChannel
     }
 
     pub fn raw_data(&self) -> Option<&'a [u8]> {
@@ -49,12 +49,12 @@ impl<'a> AudioFrame<'a> {
 
         let mut out = vec![vec![0f32; samples_per_channel]; channels];
 
-        for ch in 0..channels {
+        for (ch, channel_data) in out.iter_mut().enumerate() {
             let plane_base = ch * samples_per_channel * 4;
-            for sample_idx in 0..samples_per_channel {
+            for (sample_idx, sample) in channel_data.iter_mut().enumerate() {
                 let i = plane_base + sample_idx * 4;
                 let bytes = [data[i], data[i + 1], data[i + 2], data[i + 3]];
-                out[ch][sample_idx] = f32::from_le_bytes(bytes);
+                *sample = f32::from_le_bytes(bytes);
             }
         }
 
