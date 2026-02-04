@@ -3,12 +3,13 @@
 //! OMT publishes sender names on the LAN using DNS-SD (Bonjour/Avahi). When
 //! multicast is unavailable, OMT can use a discovery server over TCP.
 //! The C API exposes this via `omt_discovery_getaddresses` in `libomt.h`.
-//! See https://github.com/openmediatransport for protocol background.
+//! See <https://github.com/openmediatransport> for protocol background.
 //!
 //! This module wraps the low-level discovery API with retry/backoff helpers and
 //! iterator conveniences.
 
 use crate::ffi;
+use crate::types::Address;
 use std::collections::HashSet;
 use std::ffi::CStr;
 use std::time::Duration;
@@ -20,7 +21,7 @@ impl Discovery {
     /// Returns discovered sender addresses using a single attempt with no delay.
     ///
     /// This is a convenience wrapper around `get_addresses_with_options`.
-    pub fn get_addresses() -> Vec<String> {
+    pub fn get_addresses() -> Vec<Address> {
         Self::get_addresses_with_options(1, Duration::from_millis(0), false)
     }
 
@@ -33,7 +34,7 @@ impl Discovery {
         attempts: usize,
         delay: Duration,
         debug: bool,
-    ) -> Vec<String> {
+    ) -> Vec<Address> {
         Self::get_addresses_with_backoff(attempts, delay, delay, 1.0, debug)
     }
 
@@ -53,11 +54,15 @@ impl Discovery {
         max_delay: Duration,
         backoff_factor: f64,
         debug: bool,
-    ) -> Vec<String> {
+    ) -> Vec<Address> {
         let attempts = attempts.max(1);
         let mut delay_ms = duration_ms(initial_delay);
         let max_delay_ms = duration_ms(max_delay).max(delay_ms);
-        let backoff_factor = if backoff_factor < 1.0 { 1.0 } else { backoff_factor };
+        let backoff_factor = if backoff_factor < 1.0 {
+            1.0
+        } else {
+            backoff_factor
+        };
 
         let mut seen = HashSet::new();
         let mut result = Vec::new();
@@ -79,14 +84,16 @@ impl Discovery {
                     if entry_ptr.is_null() {
                         continue;
                     }
-                    let s = unsafe { CStr::from_ptr(entry_ptr) }
-                        .to_string_lossy()
-                        .to_string();
+                    let address = Address::from(
+                        unsafe { CStr::from_ptr(entry_ptr) }
+                            .to_string_lossy()
+                            .to_string(),
+                    );
                     if debug {
-                        println!("OMT discovery entry: {}", s);
+                        println!("OMT discovery entry: {}", address);
                     }
-                    if seen.insert(s.clone()) {
-                        result.push(s);
+                    if seen.insert(address.clone()) {
+                        result.push(address);
                     }
                 }
             }
@@ -103,12 +110,10 @@ impl Discovery {
         result
     }
 
-
-
     /// Returns an iterator over discovered sender addresses.
     ///
     /// This collects the current discovery results and returns an owning iterator.
-    pub fn addresses() -> impl Iterator<Item = String> {
+    pub fn addresses() -> impl Iterator<Item = Address> {
         Self::get_addresses().into_iter()
     }
 
@@ -119,7 +124,7 @@ impl Discovery {
         max_delay: Duration,
         backoff_factor: f64,
         debug: bool,
-    ) -> impl Iterator<Item = String> {
+    ) -> impl Iterator<Item = Address> {
         Self::get_addresses_with_backoff(attempts, initial_delay, max_delay, backoff_factor, debug)
             .into_iter()
     }

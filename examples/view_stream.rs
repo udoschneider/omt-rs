@@ -1,6 +1,7 @@
 use libomt::{
-    settings_get_string, settings_set_string, Codec, ColorSpace, Discovery, FrameRef, FrameType,
-    PreferredVideoFormat, ReceiveFlags, Receiver, Timeout, VideoFrame,
+    helpers::parse_cli, settings_get_string, settings_set_string, Address, Codec, ColorSpace,
+    Discovery, FrameRef, FrameType, PreferredVideoFormat, ReceiveFlags, Receiver, Timeout,
+    VideoFrame,
 };
 use std::env;
 use std::time::{Duration, Instant};
@@ -34,9 +35,7 @@ fn main() {
         match discover_first_sender() {
             Some(addr) => addr,
             None => {
-                eprintln!(
-                    "No OMT senders discovered. Use --sender/--stream or pass an address."
-                );
+                eprintln!("No OMT senders discovered. Use --sender/--stream or pass an address.");
                 std::process::exit(1);
             }
         }
@@ -93,37 +92,16 @@ fn main() {
     }
 }
 
-fn parse_cli() -> (Option<String>, Option<String>, Option<String>) {
-    let mut sender: Option<String> = None;
-    let mut stream: Option<String> = None;
-    let mut address: Option<String> = None;
 
-    let mut args = env::args().skip(1);
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--sender" => sender = args.next(),
-            "--stream" => stream = args.next(),
-            _ => {
-                if arg.starts_with("--") {
-                    eprintln!("Unknown option: {}", arg);
-                } else if address.is_none() {
-                    address = Some(arg);
-                }
-            }
-        }
-    }
 
-    (sender, stream, address)
-}
-
-fn discover_matching_sender(sender: Option<&str>, stream: Option<&str>) -> Option<String> {
+fn discover_matching_sender(sender: Option<&str>, stream: Option<&str>) -> Option<Address> {
     let addresses = discover_addresses();
 
     let sender_lc = sender.map(|s| s.to_lowercase());
     let stream_lc = stream.map(|s| s.to_lowercase());
 
     for address in addresses {
-        let address_lc = address.to_lowercase();
+        let address_lc = address.as_str().to_lowercase();
 
         if let Some(sender) = sender_lc.as_deref() {
             if !address_lc.starts_with(sender) {
@@ -144,7 +122,7 @@ fn discover_matching_sender(sender: Option<&str>, stream: Option<&str>) -> Optio
     None
 }
 
-fn discover_addresses() -> Vec<String> {
+fn discover_addresses() -> Vec<Address> {
     let attempts = env::var("LIBOMT_DISCOVERY_ATTEMPTS")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
@@ -175,13 +153,13 @@ fn discover_addresses() -> Vec<String> {
     )
 }
 
-fn discover_first_sender() -> Option<String> {
+fn discover_first_sender() -> Option<Address> {
     discover_addresses().into_iter().next()
 }
 
 fn frame_to_image(frame: &FrameRef) -> Option<image::DynamicImage> {
     let video = frame.video()?;
-    let data = video.data()?;
+    let data = video.raw_data()?;
 
     match frame.codec() {
         Codec::BGRA => bgra_to_image(&video, data),

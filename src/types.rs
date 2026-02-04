@@ -4,11 +4,104 @@
 //! low-level FFI structs (including `OMTMediaFrame` from `libomt.h`).
 //! Frames are borrowed views whose lifetime is limited to the next receive
 //! call on the same sender/receiver, matching the header's ownership rules.
-//! For protocol context, see: https://github.com/openmediatransport
+//!
+//! Timestamps use the OMT timebase (10,000,000 ticks per second) and should
+//! represent the original capture time for correct synchronization. A timestamp
+//! of `-1` tells the sender to generate timestamps and pace delivery by the
+//! frame or sample rate.
+//!
+//! Metadata frames and per-frame metadata payloads are UTF-8 XML strings with a
+//! terminating null; lengths include the null byte.
+//!
+//! For protocol context, see: <https://github.com/openmediatransport>
 
+pub use crate::audio_frame::AudioFrame;
 use crate::ffi;
+pub use crate::video_frame::VideoFrame;
 use bitflags::bitflags;
 use std::time::Duration;
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct Address(String);
+
+impl Address {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl From<String> for Address {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for Address {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+
+impl std::fmt::Display for Address {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl AsRef<str> for Address {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct Source(String);
+
+impl Source {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl From<String> for Source {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for Source {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+
+impl std::fmt::Display for Source {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl AsRef<str> for Source {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
+    }
+}
 
 /// Standard timeout type used by the safe API.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -32,9 +125,7 @@ impl Timeout {
     }
 
     pub fn as_millis_i32(self) -> i32 {
-        self.0
-            .as_millis()
-            .min(u128::from(i32::MAX as u32)) as i32
+        self.0.as_millis().min(u128::from(i32::MAX as u32)) as i32
     }
 }
 
@@ -294,10 +385,12 @@ impl<'a> FrameRef<'a> {
         Self { raw }
     }
 
+    /// Returns the OMT frame type (video/audio/metadata).
     pub fn frame_type(&self) -> FrameType {
         self.raw.Type.into()
     }
 
+    /// Returns the frame timestamp in OMT ticks (10,000,000 per second).
     pub fn timestamp(&self) -> i64 {
         self.raw.Timestamp as i64
     }
@@ -312,67 +405,22 @@ impl<'a> FrameRef<'a> {
         }
         Some(VideoFrame::new(self.raw))
     }
-}
 
-/// Video-specific accessors for a received media frame.
-pub struct VideoFrame<'a> {
-    raw: &'a ffi::OMTMediaFrame,
-}
-
-impl<'a> VideoFrame<'a> {
-    fn new(raw: &'a ffi::OMTMediaFrame) -> Self {
-        Self { raw }
+    pub fn audio(&self) -> Option<AudioFrame<'a>> {
+        if self.frame_type() != FrameType::Audio {
+            return None;
+        }
+        Some(AudioFrame::new(self.raw))
     }
 
-    pub fn width(&self) -> i32 {
-        self.raw.Width as i32
-    }
-
-    pub fn height(&self) -> i32 {
-        self.raw.Height as i32
-    }
-
-    pub fn stride(&self) -> i32 {
-        self.raw.Stride as i32
-    }
-
-    pub fn frame_rate(&self) -> (i32, i32) {
-        (self.raw.FrameRateN as i32, self.raw.FrameRateD as i32)
-    }
-
-    pub fn aspect_ratio(&self) -> f32 {
-        self.raw.AspectRatio
-    }
-
-    pub fn color_space(&self) -> ColorSpace {
-        self.raw.ColorSpace.into()
-    }
-
-    pub fn flags(&self) -> VideoFlags {
-        self.raw.Flags.into()
-    }
-
-    pub fn data(&self) -> Option<&'a [u8]> {
+    pub fn metadata(&self) -> Option<&'a [u8]> {
+        if self.frame_type() != FrameType::Metadata {
+            return None;
+        }
         if self.raw.Data.is_null() || self.raw.DataLength <= 0 {
             return None;
         }
         let len = self.raw.DataLength as usize;
         Some(unsafe { std::slice::from_raw_parts(self.raw.Data as *const u8, len) })
-    }
-
-    pub fn compressed_data(&self) -> Option<&'a [u8]> {
-        if self.raw.CompressedData.is_null() || self.raw.CompressedLength <= 0 {
-            return None;
-        }
-        let len = self.raw.CompressedLength as usize;
-        Some(unsafe { std::slice::from_raw_parts(self.raw.CompressedData as *const u8, len) })
-    }
-
-    pub fn metadata(&self) -> Option<&'a [u8]> {
-        if self.raw.FrameMetadata.is_null() || self.raw.FrameMetadataLength <= 0 {
-            return None;
-        }
-        let len = self.raw.FrameMetadataLength as usize;
-        Some(unsafe { std::slice::from_raw_parts(self.raw.FrameMetadata as *const u8, len) })
     }
 }

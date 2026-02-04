@@ -3,12 +3,12 @@
 //! A sender publishes a source and streams video plus bi-directional metadata
 //! over the OMT TCP transport. Metadata sent by receivers is retrieved via
 //! `omt_send_receive` (as described in `libomt.h`). See
-//! https://github.com/openmediatransport
+//! <https://github.com/openmediatransport>
 
 use crate::ffi;
 use crate::ffi_utils::write_c_char_array;
 use crate::receiver::{SenderInfo, Statistics, Tally};
-use crate::types::{Codec, ColorSpace, FrameRef, Quality, Timeout, VideoFlags};
+use crate::types::{Address, Codec, ColorSpace, FrameRef, Quality, Source, Timeout, VideoFlags};
 use crate::OmtError;
 use std::ffi::CString;
 use std::ptr::NonNull;
@@ -25,7 +25,8 @@ impl OutgoingFrame {
     /// Creates a video frame from raw, uncompressed pixel data.
     ///
     /// The `data` buffer must match the chosen `codec`, `width`, `height`, and `stride`.
-    /// Use `timestamp = -1` to let OMT pace frames based on the frame rate.
+    /// Timestamps use the OMT timebase (10,000,000 ticks per second). Use `timestamp = -1`
+    /// to let OMT generate timestamps and pace frames based on the frame rate.
     pub fn video(
         codec: Codec,
         width: i32,
@@ -68,9 +69,55 @@ impl OutgoingFrame {
         Self { frame, _data: data }
     }
 
+    /// Creates an audio frame from raw, uncompressed sample data.
+    ///
+    /// The `data` buffer should match the chosen `codec`, `sample_rate`,
+    /// `channels`, and `samples_per_channel`. For planar 32-bit float audio
+    /// (FPA1), this is `channels * samples_per_channel * 4` bytes.
+    /// Timestamps use the OMT timebase (10,000,000 ticks per second). Use
+    /// `timestamp = -1` to let OMT generate timestamps and pace frames based
+    /// on the sample rate.
+    pub fn audio(
+        codec: Codec,
+        sample_rate: i32,
+        channels: i32,
+        samples_per_channel: i32,
+        timestamp: i64,
+        data: Vec<u8>,
+    ) -> Self {
+        let data_len = data.len() as i32;
+        let data_ptr = data.as_ptr() as *mut std::ffi::c_void;
+
+        let frame = ffi::OMTMediaFrame {
+            Type: ffi::OMTFrameType::Audio,
+            Timestamp: timestamp as i64,
+            Codec: codec_to_ffi(codec),
+            Width: 0,
+            Height: 0,
+            Stride: 0,
+            Flags: ffi::OMT_VIDEO_FLAGS_NONE,
+            FrameRateN: 0,
+            FrameRateD: 0,
+            AspectRatio: 0.0,
+            ColorSpace: ffi::OMTColorSpace::Undefined,
+            SampleRate: sample_rate,
+            Channels: channels,
+            SamplesPerChannel: samples_per_channel,
+            Data: data_ptr,
+            DataLength: data_len,
+            CompressedData: std::ptr::null_mut(),
+            CompressedLength: 0,
+            FrameMetadata: std::ptr::null_mut(),
+            FrameMetadataLength: 0,
+        };
+
+        Self { frame, _data: data }
+    }
+
     /// Creates an XML metadata frame.
     ///
-    /// Metadata is sent over the bi-directional metadata channel. Timestamps use
+    /// Metadata is sent over the bi-directional metadata channel and must be UTF-8
+    /// XML with a terminating null byte (length includes the null). Timestamps use
     /// the OMT timebase (10,000,000 ticks per second).
     pub fn metadata_xml(xml: &str, timestamp: i64) -> Result<Self, OmtError> {
         let c_xml = CString::new(xml).map_err(|_| OmtError::InvalidCString)?;
@@ -121,8 +168,8 @@ impl Sender {
     /// Creates a new sender and publishes it on the network.
     ///
     /// When `quality` is `Default`, receivers can suggest a preferred quality.
-    pub fn create(name: &str, quality: Quality) -> Result<Self, OmtError> {
-        let c_name = CString::new(name).map_err(|_| OmtError::InvalidCString)?;
+    pub fn create(source: &Source, quality: Quality) -> Result<Self, OmtError> {
+        let c_name = CString::new(source.as_str()).map_err(|_| OmtError::InvalidCString)?;
         let handle = unsafe { ffi::omt_send_create(c_name.as_ptr(), quality.into()) };
         let handle = NonNull::new(handle).ok_or(OmtError::NullHandle)?;
         Ok(Self { handle })
@@ -146,10 +193,10 @@ impl Sender {
     }
 
     /// Redirects receivers to a new address, or clears the redirect when `None`.
-    pub fn set_redirect(&self, new_address: Option<&str>) -> Result<(), OmtError> {
+    pub fn set_redirect(&self, new_address: Option<&Address>) -> Result<(), OmtError> {
         match new_address {
             Some(addr) => {
-                let c_addr = CString::new(addr).map_err(|_| OmtError::InvalidCString)?;
+                let c_addr = CString::new(addr.as_str()).map_err(|_| OmtError::InvalidCString)?;
                 unsafe { ffi::omt_send_setredirect(self.handle.as_ptr(), c_addr.as_ptr()) };
             }
             None => unsafe { ffi::omt_send_setredirect(self.handle.as_ptr(), std::ptr::null()) },
@@ -157,8 +204,8 @@ impl Sender {
         Ok(())
     }
 
-    /// Returns the published sender address, if available.
-    pub fn get_address(&self) -> Option<String> {
+    /// Returns the published sender address as `Address`, if available.
+    pub fn get_address(&self) -> Option<Address> {
         let mut buf = vec![0u8; ffi::OMT_MAX_STRING_LENGTH];
         let len = unsafe {
             ffi::omt_send_getaddress(
@@ -171,7 +218,7 @@ impl Sender {
             return None;
         }
         let cstr = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr() as *const std::ffi::c_char) };
-        Some(cstr.to_string_lossy().to_string())
+        Some(Address::from(cstr.to_string_lossy().to_string()))
     }
 
     /// Sends a prepared frame (video or metadata) to all connected receivers.
@@ -190,11 +237,9 @@ impl Sender {
     /// was removed.
     ///
     /// Returned frames are valid until the next receive call on this sender
-    /// (matching the `libomt.h` lifetime rules for `omt_send_receive`).
-    pub fn receive_metadata(
-        &mut self,
-        timeout: Timeout,
-    ) -> Result<Option<FrameRef<'_>>, OmtError> {
+    /// (matching the `libomt.h` lifetime rules for `omt_send_receive`). The
+    /// metadata payload is UTF-8 XML with a terminating null byte.
+    pub fn receive_metadata(&mut self, timeout: Timeout) -> Result<Option<FrameRef<'_>>, OmtError> {
         let frame_ptr =
             unsafe { ffi::omt_send_receive(self.handle.as_ptr(), timeout.as_millis_i32()) };
         if frame_ptr.is_null() {
@@ -203,8 +248,6 @@ impl Sender {
             Ok(Some(FrameRef::new(unsafe { &*frame_ptr })))
         }
     }
-
-
 
     /// Retrieves tally state updates from connected receivers.
     pub fn get_tally(&self, timeout: Timeout, tally: &mut Tally) -> i32 {
@@ -234,8 +277,6 @@ impl Sender {
     }
 }
 
-
-
 impl Drop for Sender {
     fn drop(&mut self) {
         unsafe { ffi::omt_send_destroy(self.handle.as_ptr()) };
@@ -261,14 +302,6 @@ fn sender_info_to_ffi(info: &SenderInfo) -> ffi::OMTSenderInfo {
 
     raw
 }
-
-
-
-
-
-
-
-
 
 fn codec_to_ffi(codec: Codec) -> ffi::OMTCodec {
     match codec {

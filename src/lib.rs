@@ -1,14 +1,20 @@
 mod ffi;
 mod ffi_utils;
 
+mod audio_frame;
+mod video_data_format;
+mod video_frame;
+
 pub mod discovery;
 pub mod receiver;
 pub mod sender;
 pub mod settings;
 pub mod types;
+pub mod helpers;
 
 use std::fmt;
 
+pub use audio_frame::AudioFrame;
 pub use discovery::Discovery;
 pub use receiver::{Receiver, SenderInfo, Statistics, Tally};
 pub use sender::{OutgoingFrame, Sender};
@@ -17,9 +23,12 @@ pub use settings::{
     settings_set_string,
 };
 pub use types::{
-    Codec, ColorSpace, FrameRef, FrameType, PreferredVideoFormat, Quality, ReceiveFlags, Timeout,
-    VideoFlags, VideoFrame,
+    Address, Codec, ColorSpace, FrameRef, FrameType, PreferredVideoFormat, Quality, ReceiveFlags,
+    Source, Timeout, VideoFlags, VideoFrame,
 };
+pub use video_data_format::{VideoDataFormat, RGBA, RGBA16};
+
+
 
 #[derive(Debug)]
 pub enum OmtError {

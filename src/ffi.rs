@@ -187,7 +187,10 @@ extern "C" {
     pub fn omt_send_destroy(instance: *mut omt_send_t);
     pub fn omt_send(instance: *mut omt_send_t, frame: *mut OMTMediaFrame) -> c_int;
     pub fn omt_send_connections(instance: *mut omt_send_t) -> c_int;
-    pub fn omt_send_receive(instance: *mut omt_send_t, timeoutMilliseconds: c_int) -> *mut OMTMediaFrame;
+    pub fn omt_send_receive(
+        instance: *mut omt_send_t,
+        timeoutMilliseconds: c_int,
+    ) -> *mut OMTMediaFrame;
     pub fn omt_send_gettally(
         instance: *mut omt_send_t,
         timeoutMilliseconds: c_int,
@@ -198,8 +201,11 @@ extern "C" {
 
     pub fn omt_setloggingfilename(filename: *const c_char);
 
-    pub fn omt_settings_get_string(name: *const c_char, value: *mut c_char, maxLength: c_int)
-        -> c_int;
+    pub fn omt_settings_get_string(
+        name: *const c_char,
+        value: *mut c_char,
+        maxLength: c_int,
+    ) -> c_int;
     pub fn omt_settings_set_string(name: *const c_char, value: *const c_char);
     pub fn omt_settings_get_integer(name: *const c_char) -> c_int;
     pub fn omt_settings_set_integer(name: *const c_char, value: c_int);

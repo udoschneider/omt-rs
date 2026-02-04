@@ -3,11 +3,13 @@
 //! A receiver connects to a published sender and pulls video/audio/metadata
 //! over the OMT TCP transport. The address is typically discovered via DNS-SD
 //! (Bonjour/Avahi) or a discovery server (as described by `libomt.h`).
-//! See https://github.com/openmediatransport for protocol background.
+//! See <https://github.com/openmediatransport> for protocol background.
 
 use crate::ffi;
 use crate::ffi_utils::c_char_array_to_string;
-use crate::types::{FrameRef, FrameType, PreferredVideoFormat, Quality, ReceiveFlags, Timeout};
+use crate::types::{
+    Address, FrameRef, FrameType, PreferredVideoFormat, Quality, ReceiveFlags, Timeout,
+};
 use crate::OmtError;
 use std::ffi::CString;
 use std::ptr::NonNull;
@@ -51,8 +53,6 @@ pub struct Statistics {
     pub reserved7: i64,
 }
 
-
-
 fn sender_info_from_ffi(info: &ffi::OMTSenderInfo) -> Option<SenderInfo> {
     let product_name = c_char_array_to_string(&info.ProductName);
     let manufacturer = c_char_array_to_string(&info.Manufacturer);
@@ -82,26 +82,12 @@ fn sender_info_from_ffi(info: &ffi::OMTSenderInfo) -> Option<SenderInfo> {
     }
 }
 
-
-
 fn tally_to_ffi(tally: &Tally) -> ffi::OMTTally {
     ffi::OMTTally {
         preview: if tally.preview { 1 } else { 0 },
         program: if tally.program { 1 } else { 0 },
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 /// High-level receiver handle. Drops cleanly by releasing the native instance.
 pub struct Receiver {
@@ -114,16 +100,17 @@ unsafe impl Sync for Receiver {}
 impl Receiver {
     /// Connects to a sender address and creates a receiver instance.
     ///
+    /// `address` uses the `Address` newtype to distinguish sender addresses from other strings.
     /// `frame_types` selects which streams to receive, `format` controls the
     /// preferred pixel formats, and `flags` toggles optional behaviors such as
     /// preview or compressed delivery.
     pub fn create(
-        address: &str,
+        address: &Address,
         frame_types: FrameType,
         format: PreferredVideoFormat,
         flags: ReceiveFlags,
     ) -> Result<Self, OmtError> {
-        let c_address = CString::new(address).map_err(|_| OmtError::InvalidCString)?;
+        let c_address = CString::new(address.as_str()).map_err(|_| OmtError::InvalidCString)?;
         let handle = unsafe {
             ffi::omt_receive_create(
                 c_address.as_ptr(),
@@ -142,14 +129,20 @@ impl Receiver {
     /// was removed.
     ///
     /// Returned frames are valid until the next `receive` call on this receiver
-    /// (matching the `libomt.h` lifetime rules for `omt_receive`).
+    /// (matching the `libomt.h` lifetime rules for `omt_receive`). Timestamps are
+    /// in OMT ticks (10,000,000 per second). Metadata frames carry UTF-8 XML with
+    /// a terminating null byte.
     pub fn receive(
         &mut self,
         frame_types: FrameType,
         timeout: Timeout,
     ) -> Result<Option<FrameRef<'_>>, OmtError> {
         let frame_ptr = unsafe {
-            ffi::omt_receive(self.handle.as_ptr(), frame_types.into(), timeout.as_millis_i32())
+            ffi::omt_receive(
+                self.handle.as_ptr(),
+                frame_types.into(),
+                timeout.as_millis_i32(),
+            )
         };
         if frame_ptr.is_null() {
             Ok(None)
@@ -158,11 +151,10 @@ impl Receiver {
         }
     }
 
-
-
     /// Sends XML metadata back to the sender (bi-directional metadata channel).
     ///
-    /// Timestamps use the OMT timebase (10,000,000 ticks per second).
+    /// Metadata must be UTF-8 XML with a terminating null byte (length includes
+    /// the null). Timestamps use the OMT timebase (10,000,000 ticks per second).
     pub fn send_metadata_xml(&self, xml: &str, timestamp: i64) -> Result<i32, OmtError> {
         let c_xml = CString::new(xml).map_err(|_| OmtError::InvalidCString)?;
         let mut frame: ffi::OMTMediaFrame = unsafe { std::mem::zeroed() };
@@ -236,8 +228,6 @@ impl Receiver {
         Statistics::from(&stats)
     }
 }
-
-
 
 impl Drop for Receiver {
     fn drop(&mut self) {

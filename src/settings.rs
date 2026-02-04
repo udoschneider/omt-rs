@@ -3,7 +3,7 @@
 //! These helpers wrap global configuration and logging utilities exposed by
 //! libomt. Note that other APIs in this crate use `Duration` for timeouts.
 //! For protocol context, see:
-//! https://github.com/openmediatransport
+//! <https://github.com/openmediatransport>
 use crate::ffi;
 use crate::OmtError;
 use std::ffi::{CStr, CString};

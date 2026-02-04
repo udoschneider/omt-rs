@@ -80,10 +80,11 @@ for addr in addresses {
 ### Receive video
 
 ```rust
-use libomt::{Receiver, FrameType, PreferredVideoFormat, ReceiveFlags, Timeout};
+use libomt::{Address, Receiver, FrameType, PreferredVideoFormat, ReceiveFlags, Timeout};
 
+let address = Address::new("HOST (Sender Name)");
 let mut receiver = Receiver::create(
-    "HOST (Sender Name)",
+    &address,
     FrameType::Video,
     PreferredVideoFormat::UYVYorBGRA,
     ReceiveFlags::NONE,
@@ -100,9 +101,10 @@ if let Ok(Some(frame)) = receiver.receive(FrameType::Video, Timeout::from_millis
 ### Send video
 
 ```rust
-use libomt::{Sender, OutgoingFrame, Codec, ColorSpace, Quality, VideoFlags};
+use libomt::{Sender, Source, OutgoingFrame, Codec, ColorSpace, Quality, VideoFlags};
 
-let sender = Sender::create("My Sender", Quality::Default).expect("create sender");
+let source = Source::new("My Sender");
+let sender = Sender::create(&source, Quality::Default).expect("create sender");
 
 // Fill `data` with raw uncompressed frame bytes for the chosen format.
 let data = vec![0u8; 1920 * 1080 * 2]; // UYVY example (2 bytes per pixel)
@@ -171,7 +173,7 @@ for address in addresses {
 
 ## API overview
 
-The high-level API is re-exported at the crate root.
+The high-level API is re-exported at the crate root. Newtypes follow `libomt.h` naming: use `Address` for receiver addresses and `Source` for sender names.
 
 ### Discovery
 
@@ -180,7 +182,7 @@ The high-level API is re-exported at the crate root.
 
 Key APIs:
 
-- `Discovery::get_addresses() -> Vec<String>`
+- `Discovery::get_addresses() -> Vec<Address>`
 - `Discovery::get_addresses_with_options(attempts, delay: Duration, debug)`
 - `Discovery::get_addresses_with_backoff(attempts, initial_delay: Duration, max_delay: Duration, backoff_factor, debug)`
 
@@ -220,26 +222,28 @@ Use `FrameType` to select what to receive:
 
 Key APIs:
 
-- `Sender::create(name, quality) -> Result<Sender, OmtError>`
+- `Sender::create(source: &Source, quality) -> Result<Sender, OmtError>`
 - `Sender::send(&mut OutgoingFrame) -> i32`
 - `Sender::connections() -> i32`
 - `Sender::receive_metadata(timeout: Timeout) -> Result<Option<FrameRef>, OmtError>`
 - `Sender::set_sender_info(&SenderInfo)`
 - `Sender::add_connection_metadata(metadata)`
 - `Sender::clear_connection_metadata()`
-- `Sender::set_redirect(Some(addr) | None)`
-- `Sender::get_address() -> Option<String>`
+- `Sender::set_redirect(Some(address: &Address) | None)`
+- `Sender::get_address() -> Option<Address>`
 - `Sender::get_video_statistics() -> Statistics`
 - `Sender::get_audio_statistics() -> Statistics`
 
 ### Frames and data access
 
-Received frames are exposed through `FrameRef` and `VideoFrame`.
+Received frames are exposed through `FrameRef`, `VideoFrame`, and `AudioFrame`.
 
 - `FrameRef::frame_type()` → `FrameType`
-- `FrameRef::timestamp()` → `i64`
+- `FrameRef::timestamp()` → `i64` (OMT timebase; 10,000,000 ticks per second)
 - `FrameRef::codec()` → `Codec`
 - `FrameRef::video()` → `Option<VideoFrame>`
+- `FrameRef::audio()` → `Option<AudioFrame>`
+- `FrameRef::metadata()` → `Option<&[u8]>` (UTF‑8 XML with terminating null)
 
 `VideoFrame` provides:
 
@@ -248,9 +252,24 @@ Received frames are exposed through `FrameRef` and `VideoFrame`.
 - `aspect_ratio()`
 - `color_space()`
 - `flags() -> VideoFlags`
-- `data() -> Option<&[u8]>` (raw uncompressed)
-- `compressed_data() -> Option<&[u8]>`
+- `raw_data() -> Option<&[u8]>` (uncompressed pixel data)
+- `data(format: VideoDataFormat) -> Option<Vec<u8>>` (converted RGB/RGBA output)
+- `compressed_data() -> Option<&[u8]>` (VMX1 if `ReceiveFlags::INCLUDE_COMPRESSED` or `COMPRESSED_ONLY`)
 - `metadata() -> Option<&[u8]>` (per‑frame metadata payload)
+
+`AudioFrame` provides:
+
+- `sample_rate()`, `channels()`, `samples_per_channel()`
+- `raw_data() -> Option<&[u8]>` (planar 32‑bit float audio, FPA1)
+- `data() -> Option<Vec<Vec<f32>>>`
+- `compressed_data()` and `metadata()` (if present)
+
+#### Timestamps and metadata
+
+- Timestamps use the OMT timebase (10,000,000 ticks per second) and should represent the original capture time for proper synchronization.
+- For outbound video frames, a timestamp of `-1` asks the sender to generate timestamps and pace delivery according to the frame rate.
+- Metadata frames and per‑frame metadata payloads are UTF‑8 XML with a terminating null; lengths include the null byte.
+- Received frame buffers are valid only until the next receive call on the same sender/receiver.
 
 ### Settings and logging
 
@@ -279,10 +298,17 @@ OMT supports multiple pixel formats and alpha channel options. In this wrapper:
 
 ### Codecs (`Codec`)
 
-- `UYVY`, `YUY2`, `BGRA`, `NV12`, `YV12`
-- `UYVA`, `P216`, `PA16`
-- `VMX1`, `FPA1` (internal/codec identifiers)
-- `Unknown(i32)` for non‑standard values
+- `VMX1` — fast compressed video codec.
+- `UYVY`, `YUY2` — 16‑bit YUV packed formats (YUY2 = YUYV order).
+- `UYVA` — UYVY followed by a full‑resolution alpha plane.
+- `NV12`, `YV12` — planar 4:2:0 YUV formats (NV12 = interleaved UV plane).
+- `BGRA` — 32‑bit RGBA (Win32 ARGB32 layout).
+- `P216` — planar 4:2:2 YUV with 16‑bit components (Y plane + interleaved UV plane).
+- `PA16` — `P216` plus a 16‑bit alpha plane.
+- `FPA1` — planar 32‑bit float audio.
+- `Unknown(i32)` for non‑standard values.
+
+When receiving uncompressed video, OMT delivers only `UYVY`, `UYVA`, `BGRA`, or `BGRX` (alpha omitted). Other formats may arrive as `VMX1` and can be decoded using `VideoFrame::data(...)`.
 
 ### Preferred receive formats (`PreferredVideoFormat`)
 
@@ -295,12 +321,21 @@ OMT supports multiple pixel formats and alpha channel options. In this wrapper:
 
 ### Video flags (`VideoFlags`)
 
-- `NONE`
-- `INTERLACED`
-- `ALPHA`
-- `PREMULTIPLIED`
-- `PREVIEW`
-- `HIGH_BIT_DEPTH`
+- `NONE` — no special flags.
+- `INTERLACED` — frame is interlaced.
+- `ALPHA` — frame contains an alpha channel (if unset, `BGRA` is treated as `BGRX` and `UYVA` as `UYVY`).
+- `PREMULTIPLIED` — alpha channel is premultiplied (only meaningful when `ALPHA` is set).
+- `PREVIEW` — sender emitted a 1/8th preview frame.
+- `HIGH_BIT_DEPTH` — set for `P216`/`PA16` sources and for `VMX1` that originated from those formats, so decoders can select the right output format.
+
+### Video data formats (`VideoDataFormat`)
+
+- `RGB` (8-bit/component)
+- `RGBAs` (8-bit/component, straight alpha) — alias: `RGBA`
+- `RGBAp` (8-bit/component, premultiplied alpha)
+- `RGB16` (16-bit/component)
+- `RGBAs16` (16-bit/component, straight alpha) — alias: `RGBA16`
+- `RGBAp16` (16-bit/component, premultiplied alpha)
 
 ---
 

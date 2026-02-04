@@ -1,5 +1,5 @@
 use libomt::{
-    fourcc_to_string, settings_get_string, settings_set_string, Discovery, FrameType,
+    fourcc_to_string, settings_get_string, settings_set_string, Address, Discovery, FrameType,
     PreferredVideoFormat, ReceiveFlags, Receiver, Timeout, VideoFlags,
 };
 use std::env;
@@ -39,7 +39,7 @@ fn main() {
         .unwrap_or(false);
 
     // Use the iterator-based discovery helper to collect sender addresses.
-    let addresses: Vec<String> = Discovery::addresses_with_backoff(
+    let addresses: Vec<Address> = Discovery::addresses_with_backoff(
         attempts,
         Timeout::from_millis(initial_delay_ms).as_duration(),
         Timeout::from_millis(max_delay_ms).as_duration(),
