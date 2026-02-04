@@ -19,7 +19,9 @@ pub use discovery::Discovery;
 pub use receiver::{Receiver, SenderInfo, Statistics, Tally};
 pub use sender::{OutgoingFrame, Sender};
 pub use settings::{
-    set_logging_filename, settings_get_integer, settings_get_string, settings_set_integer,
+    get_discovery_server, get_network_port_end, get_network_port_range, get_network_port_start,
+    set_discovery_server, set_logging_filename, set_network_port_end, set_network_port_range,
+    set_network_port_start, settings_get_integer, settings_get_string, settings_set_integer,
     settings_set_string,
 };
 pub use types::{

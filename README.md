@@ -278,6 +278,19 @@ Received frames are exposed through `FrameRef`, `VideoFrame`, and `AudioFrame`.
 - `settings_get_integer(name) -> Option<i32>`
 - `settings_set_integer(name, value)`
 
+#### Convenience methods for documented settings
+
+The following convenience methods are available for settings documented in `libomt.h`:
+
+- `get_discovery_server() -> Option<String>` - Get DiscoveryServer URL
+- `set_discovery_server(server: &str)` - Set DiscoveryServer URL (empty string for DNS-SD)
+- `get_network_port_start() -> i32` - Get first port for Send instances (default: 6400)
+- `set_network_port_start(port: i32)` - Set first port for Send instances
+- `get_network_port_end() -> i32` - Get last port for Send instances (default: 6600)
+- `set_network_port_end(port: i32)` - Set last port for Send instances
+- `get_network_port_range() -> (i32, i32)` - Get port range as tuple
+- `set_network_port_range(start: i32, end: i32)` - Set port range
+
 #### Logging with the `log` crate
 
 The library uses the Rust `log` crate for debug and diagnostic output. To enable logging:
