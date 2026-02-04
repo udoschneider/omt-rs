@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 fn main() {
     env_logger::init();
 
-    if let Ok(server) = env::var("LIBOMT_DISCOVERY_SERVER") {
+    if let Ok(server) = env::var("OMTRS_DISCOVERY_SERVER") {
         let server = server.trim().to_string();
         if !server.is_empty() {
             if let Err(err) = settings_set_string("DiscoveryServer", &server) {
@@ -64,7 +64,7 @@ fn main() {
         ..Default::default()
     };
 
-    let fps = env::var("LIBOMT_VIEW_FPS")
+    let fps = env::var("OMTRS_VIEW_FPS")
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
         .filter(|v| *v > 0.0)
@@ -124,19 +124,19 @@ fn discover_matching_sender(sender: Option<&str>, stream: Option<&str>) -> Optio
 }
 
 fn discover_addresses() -> Vec<Address> {
-    let attempts = env::var("LIBOMT_DISCOVERY_ATTEMPTS")
+    let attempts = env::var("OMTRS_DISCOVERY_ATTEMPTS")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(5);
-    let initial_delay_ms = env::var("LIBOMT_DISCOVERY_INITIAL_DELAY_MS")
+    let initial_delay_ms = env::var("OMTRS_DISCOVERY_INITIAL_DELAY_MS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(200);
-    let max_delay_ms = env::var("LIBOMT_DISCOVERY_MAX_DELAY_MS")
+    let max_delay_ms = env::var("OMTRS_DISCOVERY_MAX_DELAY_MS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(initial_delay_ms);
-    let backoff = env::var("LIBOMT_DISCOVERY_BACKOFF")
+    let backoff = env::var("OMTRS_DISCOVERY_BACKOFF")
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
         .unwrap_or(1.0);
