@@ -15,8 +15,8 @@
 //!
 //! For protocol context, see: <https://github.com/openmediatransport>
 
-pub use crate::audio_frame::AudioFrame;
 use crate::ffi;
+pub use crate::receiver::AudioFrame;
 pub use crate::video_frame::VideoFrame;
 use bitflags::bitflags;
 use std::time::Duration;

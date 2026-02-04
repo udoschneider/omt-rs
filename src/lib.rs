@@ -1,7 +1,6 @@
 mod ffi;
 mod ffi_utils;
 
-mod audio_frame;
 mod video_data_format;
 mod video_frame;
 
@@ -14,9 +13,8 @@ pub mod types;
 
 use std::fmt;
 
-pub use audio_frame::AudioFrame;
 pub use discovery::Discovery;
-pub use receiver::{Receiver, SenderInfo, Statistics, Tally};
+pub use receiver::{AudioFrame, Receiver, SenderInfo, Statistics, Tally};
 pub use sender::{OutgoingFrame, Sender};
 pub use settings::{
     get_discovery_server, get_network_port_end, get_network_port_range, get_network_port_start,
