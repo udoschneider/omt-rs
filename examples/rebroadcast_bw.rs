@@ -1,25 +1,14 @@
 use log::{error, info};
 use omt::{
-    helpers::parse_cli, settings_get_string, settings_set_string, Address, Codec, ColorSpace,
-    Discovery, FrameType, OutgoingFrame, PreferredVideoFormat, Quality, ReceiveFlags, Receiver,
-    Sender, Source, Timeout, VideoDataFormat, VideoFlags,
+    helpers::{discover_first_sender, discover_matching_sender, parse_cli},
+    Codec, ColorSpace, FrameType, OutgoingFrame, PreferredVideoFormat, Quality, ReceiveFlags,
+    Receiver, Sender, Source, Timeout, VideoDataFormat, VideoFlags,
 };
-use std::env;
+
 use std::time::Duration;
 
 fn main() {
     env_logger::init();
-    if let Ok(server) = env::var("OMTRS_DISCOVERY_SERVER") {
-        let server = server.trim().to_string();
-        if !server.is_empty() {
-            if let Err(err) = settings_set_string("DiscoveryServer", &server) {
-                error!("Failed to set DiscoveryServer: {}", err);
-            }
-        }
-    }
-
-    let current = settings_get_string("DiscoveryServer").unwrap_or_else(|| "<default>".to_string());
-    info!("DiscoveryServer: {}", current);
 
     let (sender, stream, explicit_address) = parse_cli();
 
@@ -123,64 +112,6 @@ fn main() {
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-}
-
-fn discover_matching_sender(sender: Option<&str>, stream: Option<&str>) -> Option<Address> {
-    let addresses = discover_addresses();
-
-    let sender_lc = sender.map(|s| s.to_lowercase());
-    let stream_lc = stream.map(|s| s.to_lowercase());
-
-    for address in addresses {
-        let address_lc = address.as_str().to_lowercase();
-
-        if let Some(sender) = sender_lc.as_deref() {
-            if !address_lc.starts_with(sender) {
-                continue;
-            }
-        }
-
-        if let Some(stream) = stream_lc.as_deref() {
-            let needle = format!("({})", stream);
-            if !address_lc.contains(&needle) {
-                continue;
-            }
-        }
-
-        return Some(address);
-    }
-
-    None
-}
-
-fn discover_addresses() -> Vec<Address> {
-    let attempts = env::var("OMTRS_DISCOVERY_ATTEMPTS")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(5);
-    let initial_delay_ms = env::var("OMTRS_DISCOVERY_INITIAL_DELAY_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(200);
-    let max_delay_ms = env::var("OMTRS_DISCOVERY_MAX_DELAY_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(initial_delay_ms);
-    let backoff = env::var("OMTRS_DISCOVERY_BACKOFF")
-        .ok()
-        .and_then(|v| v.parse::<f64>().ok())
-        .unwrap_or(1.0);
-
-    Discovery::get_addresses_with_backoff(
-        attempts,
-        Timeout::from_millis(initial_delay_ms).as_duration(),
-        Timeout::from_millis(max_delay_ms).as_duration(),
-        backoff,
-    )
-}
-
-fn discover_first_sender() -> Option<Address> {
-    discover_addresses().into_iter().next()
 }
 
 fn extract_stream_name(address: &str) -> Option<String> {
