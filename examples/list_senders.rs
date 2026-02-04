@@ -1,8 +1,8 @@
-use libomt::{
+use log::{error, info};
+use omt::{
     fourcc_to_string, settings_get_string, settings_set_string, Address, Discovery, FrameType,
     PreferredVideoFormat, ReceiveFlags, Receiver, Timeout, VideoFlags,
 };
-use log::{error, info};
 use std::env;
 
 fn main() {

@@ -1,6 +1,6 @@
-# libomt (Rust) — High‑level wrapper
+# omt — High‑level Rust wrapper for libomt
 
-This crate provides a high‑level Rust API for the **libomt** C library from the Open Media Transport (OMT) project. It includes:
+This crate (`omt`) provides a high‑level Rust API for the **libomt** C library from the Open Media Transport (OMT) project. It includes:
 
 - Ergonomic wrappers around OMT discovery, sending, and receiving.
 - Strongly‑typed enums for codecs, flags, and formats that map to `libomt.h`.
@@ -44,7 +44,7 @@ On macOS/Linux you may need to set:
 - `LIBRARY_PATH` or `RUSTFLAGS="-L /path/to/libomt"`
 - `DYLD_LIBRARY_PATH` (macOS) or `LD_LIBRARY_PATH` (Linux) at runtime
 
-The crate links with:
+The `omt` crate links with:
 
 ```
 #[link(name = "omt")]
@@ -69,7 +69,7 @@ cargo build
 ### Discover sources
 
 ```rust
-use libomt::Discovery;
+use omt::Discovery;
 
 let addresses = Discovery::get_addresses();
 for addr in addresses {
@@ -80,7 +80,7 @@ for addr in addresses {
 ### Receive video
 
 ```rust
-use libomt::{Address, Receiver, FrameType, PreferredVideoFormat, ReceiveFlags, Timeout};
+use omt::{Address, Receiver, FrameType, PreferredVideoFormat, ReceiveFlags, Timeout};
 
 let address = Address::new("HOST (Sender Name)");
 let mut receiver = Receiver::create(
@@ -101,7 +101,7 @@ if let Ok(Some(frame)) = receiver.receive(FrameType::Video, Timeout::from_millis
 ### Send video
 
 ```rust
-use libomt::{Sender, Source, OutgoingFrame, Codec, ColorSpace, Quality, VideoFlags};
+use omt::{Sender, Source, OutgoingFrame, Codec, ColorSpace, Quality, VideoFlags};
 
 let source = Source::new("My Sender");
 let sender = Sender::create(&source, Quality::Default).expect("create sender");
@@ -129,7 +129,7 @@ sender.send(&mut frame);
 ### Metadata
 
 ```rust
-use libomt::OutgoingFrame;
+use omt::OutgoingFrame;
 
 let mut metadata = OutgoingFrame::metadata_xml(
     "<example><value>42</value></example>",
@@ -144,7 +144,7 @@ let mut metadata = OutgoingFrame::metadata_xml(
 ### Sender metadata
 
 ```rust
-use libomt::{Discovery, FrameType, PreferredVideoFormat, ReceiveFlags, Receiver, Timeout};
+use omt::{Discovery, FrameType, PreferredVideoFormat, ReceiveFlags, Receiver, Timeout};
 
 let addresses = Discovery::addresses_with_backoff(
     3,
@@ -172,7 +172,7 @@ for address in addresses {
 
 ## API overview
 
-The high-level API is re-exported at the crate root. Newtypes follow `libomt.h` naming: use `Address` for receiver addresses and `Source` for sender names.
+The high-level API is re-exported at the crate root (`omt::*`). Newtypes follow `libomt.h` naming: use `Address` for receiver addresses and `Source` for sender names.
 
 ### Discovery
 
@@ -316,7 +316,7 @@ Discovery debug output is now controlled via the `RUST_LOG` environment variable
 The API uses `Timeout` for receive timeouts, with convenience constructors:
 
 ```rust
-use libomt::Timeout;
+use omt::Timeout;
 
 let t1 = Timeout::from_millis(1000);
 let t2 = Timeout::from_secs(2);
@@ -380,7 +380,7 @@ Senders select a quality level with `Quality`:
 When a sender uses `Default`, it starts at **Medium** and allows receivers to suggest a preferred quality. The sender then chooses the **highest suggested quality** across connected receivers. If a receiver is set to `Default`, it defers to other receivers’ suggestions.
 
 ```rust
-use libomt::{Receiver, Quality};
+use omt::{Receiver, Quality};
 
 receiver.set_suggested_quality(Quality::High);
 ```
@@ -400,7 +400,7 @@ receiver.set_suggested_quality(Quality::High);
 
 ## Safety and lifetime notes
 
-This wrapper is safe to use as long as you follow these rules:
+The `omt` crate is safe to use as long as you follow these rules:
 
 1. **Frame lifetimes**  
    Frames returned by `Receiver::receive` and `Sender::receive_metadata` are valid only until the next call on the same receiver/sender. Do not store references beyond that.
@@ -416,7 +416,7 @@ This wrapper is safe to use as long as you follow these rules:
 
 ## Examples
 
-This project includes runnable examples under `examples/` that use discovery and direct receive calls:
+The `omt` crate includes runnable examples under `examples/` that use discovery and direct receive calls:
 
 - `list_senders` discovers sources and prints their video format.
 - `view_stream` renders frames to the terminal.

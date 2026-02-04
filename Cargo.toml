@@ -1,5 +1,5 @@
 [package]
-name = "libomt"
+name = "omt"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
@@ -7,7 +7,7 @@ description = "Rust wrapper for libomt"
 build = "build.rs"
 
 [lib]
-name = "libomt"
+name = "omt"
 path = "src/lib.rs"
 
 

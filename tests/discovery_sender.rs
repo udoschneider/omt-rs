@@ -1,10 +1,10 @@
-use libomt::{Discovery, Quality, Sender, Source};
+use omt::{Discovery, Quality, Sender, Source};
 use std::thread::sleep;
 use std::time::Duration;
 
 #[test]
 fn discovery_finds_sender() {
-    let source = Source::from(format!("omt-rs-test-sender-{}", std::process::id()));
+    let source = Source::from(format!("omt-test-sender-{}", std::process::id()));
     let _sender = Sender::create(&source, Quality::Default).expect("create sender");
 
     // Give the sender a moment to advertise via DNS-SD / discovery server.

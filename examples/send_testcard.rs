@@ -1,7 +1,7 @@
-use libomt::{
+use log::{error, info};
+use omt::{
     Codec, ColorSpace, OutgoingFrame, Quality, Sender, SenderInfo, Source, Timeout, VideoFlags,
 };
-use log::{error, info};
 use std::f32::consts::TAU;
 use std::path::Path;
 use std::thread::sleep;

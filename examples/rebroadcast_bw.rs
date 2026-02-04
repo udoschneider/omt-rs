@@ -1,9 +1,9 @@
-use libomt::{
+use log::{error, info};
+use omt::{
     helpers::parse_cli, settings_get_string, settings_set_string, Address, Codec, ColorSpace,
     Discovery, FrameType, OutgoingFrame, PreferredVideoFormat, Quality, ReceiveFlags, Receiver,
     Sender, Source, Timeout, VideoDataFormat, VideoFlags,
 };
-use log::{error, info};
 use std::env;
 use std::time::Duration;
 

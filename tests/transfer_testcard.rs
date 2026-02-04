@@ -1,4 +1,4 @@
-use libomt::{
+use omt::{
     Address, Codec, ColorSpace, FrameRef, FrameType, OutgoingFrame, PreferredVideoFormat, Quality,
     ReceiveFlags, Receiver, Sender, Source, Timeout, VideoFlags,
 };
@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 #[test]
 fn sender_receiver_transfers_testcard() {
-    let source = Source::from(format!("omt-rs-testcard-{}", std::process::id()));
+    let source = Source::from(format!("omt-testcard-{}", std::process::id()));
     let sender = Sender::create(&source, Quality::Default).expect("create sender");
 
     let address: Address = wait_for_sender_address(&sender)
