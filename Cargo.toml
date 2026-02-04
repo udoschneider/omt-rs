@@ -15,7 +15,9 @@ path = "src/lib.rs"
 [dependencies]
 libc = "0.2"
 bitflags = "2.6"
+log = "0.4"
 
 [dev-dependencies]
 viuer = "0.6"
 image = "0.24"
+env_logger = "0.11"

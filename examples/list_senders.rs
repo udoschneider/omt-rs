@@ -2,20 +2,22 @@ use libomt::{
     fourcc_to_string, settings_get_string, settings_set_string, Address, Discovery, FrameType,
     PreferredVideoFormat, ReceiveFlags, Receiver, Timeout, VideoFlags,
 };
+use log::{error, info};
 use std::env;
 
 fn main() {
+    env_logger::init();
     if let Ok(server) = env::var("LIBOMT_DISCOVERY_SERVER") {
         let server = server.trim().to_string();
         if !server.is_empty() {
             if let Err(err) = settings_set_string("DiscoveryServer", &server) {
-                println!("Failed to set DiscoveryServer: {}", err);
+                error!("Failed to set DiscoveryServer: {}", err);
             }
         }
     }
 
     let current = settings_get_string("DiscoveryServer").unwrap_or_else(|| "<default>".to_string());
-    println!("DiscoveryServer: {}", current);
+    info!("DiscoveryServer: {}", current);
 
     let attempts = env::var("LIBOMT_DISCOVERY_ATTEMPTS")
         .ok()
@@ -33,10 +35,6 @@ fn main() {
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
         .unwrap_or(1.0);
-    let debug = env::var("LIBOMT_DISCOVERY_DEBUG")
-        .ok()
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
 
     // Use the iterator-based discovery helper to collect sender addresses.
     let addresses: Vec<Address> = Discovery::addresses_with_backoff(
@@ -44,18 +42,17 @@ fn main() {
         Timeout::from_millis(initial_delay_ms).as_duration(),
         Timeout::from_millis(max_delay_ms).as_duration(),
         backoff,
-        debug,
     )
     .collect();
 
     if addresses.is_empty() {
-        println!("No OMT senders discovered.");
+        info!("No OMT senders discovered.");
         return;
     }
 
-    println!("Discovered {} sender(s):", addresses.len());
+    info!("Discovered {} sender(s):", addresses.len());
     for address in addresses {
-        println!("- {}", address);
+        info!("- {}", address);
 
         let mut receiver = match Receiver::create(
             &address,
@@ -65,23 +62,23 @@ fn main() {
         ) {
             Ok(r) => r,
             Err(err) => {
-                println!("  -> Failed to create receiver: {}", err);
+                error!("  -> Failed to create receiver: {}", err);
                 continue;
             }
         };
 
         match receiver.get_sender_info() {
             Some(info) => {
-                println!("  -> SenderInfo:");
-                println!("     ProductName: {}", info.product_name);
-                println!("     Manufacturer: {}", info.manufacturer);
-                println!("     Version: {}", info.version);
-                println!("     Reserved1: {}", info.reserved1);
-                println!("     Reserved2: {}", info.reserved2);
-                println!("     Reserved3: {}", info.reserved3);
+                info!("  -> SenderInfo:");
+                info!("     ProductName: {}", info.product_name);
+                info!("     Manufacturer: {}", info.manufacturer);
+                info!("     Version: {}", info.version);
+                info!("     Reserved1: {}", info.reserved1);
+                info!("     Reserved2: {}", info.reserved2);
+                info!("     Reserved3: {}", info.reserved3);
             }
             None => {
-                println!("  -> SenderInfo: <none>");
+                info!("  -> SenderInfo: <none>");
             }
         }
 
@@ -93,7 +90,7 @@ fn main() {
                     let flags = describe_video_flags(video.flags());
                     let (fr_n, fr_d) = video.frame_rate();
 
-                    println!(
+                    info!(
                         "  -> Video: {}x{} @ {}/{} fps, codec {}, flags [{}], colorspace {:?}",
                         video.width(),
                         video.height(),
@@ -104,14 +101,14 @@ fn main() {
                         video.color_space()
                     );
                 } else {
-                    println!("  -> No video frame received (non-video).");
+                    info!("  -> No video frame received (non-video).");
                 }
             }
             Ok(None) => {
-                println!("  -> No video frame received (timeout).");
+                info!("  -> No video frame received (timeout).");
             }
             Err(err) => {
-                println!("  -> Failed to receive frame: {}", err);
+                error!("  -> Failed to receive frame: {}", err);
             }
         }
     }

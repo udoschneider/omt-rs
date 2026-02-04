@@ -1,4 +1,5 @@
 use crate::Address;
+use log::warn;
 use std::env;
 
 /// Parse CLI args for `--sender`, `--stream`, or a positional address.
@@ -23,7 +24,7 @@ where
             "--stream" => stream = args.next(),
             _ => {
                 if arg.starts_with("--") {
-                    eprintln!("Unknown option: {}", arg);
+                    warn!("Unknown option: {}", arg);
                 } else if address.is_none() {
                     address = Some(Address::from(arg));
                 }

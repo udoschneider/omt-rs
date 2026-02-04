@@ -16,7 +16,6 @@ fn discovery_finds_sender() {
             Duration::from_millis(100),
             Duration::from_millis(200),
             1.0,
-            false,
         );
 
         if addresses

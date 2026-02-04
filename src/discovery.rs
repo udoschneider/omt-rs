@@ -10,6 +10,7 @@
 
 use crate::ffi;
 use crate::types::Address;
+use log::debug;
 use std::collections::HashSet;
 use std::ffi::CStr;
 use std::time::Duration;
@@ -22,20 +23,15 @@ impl Discovery {
     ///
     /// This is a convenience wrapper around `get_addresses_with_options`.
     pub fn get_addresses() -> Vec<Address> {
-        Self::get_addresses_with_options(1, Duration::from_millis(0), false)
+        Self::get_addresses_with_options(1, Duration::from_millis(0))
     }
 
     /// Discovers sender addresses using a fixed delay between attempts.
     ///
     /// - `attempts`: number of discovery attempts (minimum 1).
     /// - `delay`: delay between attempts.
-    /// - `debug`: prints diagnostic output during discovery when true.
-    pub fn get_addresses_with_options(
-        attempts: usize,
-        delay: Duration,
-        debug: bool,
-    ) -> Vec<Address> {
-        Self::get_addresses_with_backoff(attempts, delay, delay, 1.0, debug)
+    pub fn get_addresses_with_options(attempts: usize, delay: Duration) -> Vec<Address> {
+        Self::get_addresses_with_backoff(attempts, delay, delay, 1.0)
     }
 
     /// Discovers sender addresses with exponential backoff.
@@ -44,7 +40,6 @@ impl Discovery {
     /// - `initial_delay`: initial delay between attempts.
     /// - `max_delay`: upper bound on the delay between attempts.
     /// - `backoff_factor`: multiplier applied after each attempt (values < 1.0 are treated as 1.0).
-    /// - `debug`: prints diagnostic output during discovery when true.
     ///
     /// This aggregates unique addresses across all attempts instead of returning
     /// on the first non-empty result.
@@ -53,7 +48,6 @@ impl Discovery {
         initial_delay: Duration,
         max_delay: Duration,
         backoff_factor: f64,
-        debug: bool,
     ) -> Vec<Address> {
         let attempts = attempts.max(1);
         let mut delay_ms = duration_ms(initial_delay);
@@ -71,12 +65,10 @@ impl Discovery {
             let mut count: i32 = 0;
             let list_ptr = unsafe { ffi::omt_discovery_getaddresses(&mut count as *mut i32) };
 
-            if debug {
-                println!(
-                    "OMT discovery attempt {}/{} -> count={} (delay_ms={})",
-                    attempt, attempts, count, delay_ms
-                );
-            }
+            debug!(
+                "OMT discovery attempt {}/{} -> count={} (delay_ms={})",
+                attempt, attempts, count, delay_ms
+            );
 
             if !list_ptr.is_null() && count > 0 {
                 for i in 0..count {
@@ -89,9 +81,7 @@ impl Discovery {
                             .to_string_lossy()
                             .to_string(),
                     );
-                    if debug {
-                        println!("OMT discovery entry: {}", address);
-                    }
+                    debug!("OMT discovery entry: {}", address);
                     if seen.insert(address.clone()) {
                         result.push(address);
                     }
@@ -123,9 +113,8 @@ impl Discovery {
         initial_delay: Duration,
         max_delay: Duration,
         backoff_factor: f64,
-        debug: bool,
     ) -> impl Iterator<Item = Address> {
-        Self::get_addresses_with_backoff(attempts, initial_delay, max_delay, backoff_factor, debug)
+        Self::get_addresses_with_backoff(attempts, initial_delay, max_delay, backoff_factor)
             .into_iter()
     }
 }

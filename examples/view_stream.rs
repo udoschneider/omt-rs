@@ -3,21 +3,24 @@ use libomt::{
     Discovery, FrameRef, FrameType, PreferredVideoFormat, ReceiveFlags, Receiver, Timeout,
     VideoFrame,
 };
+use log::{error, info};
 use std::env;
 use std::time::{Duration, Instant};
 
 fn main() {
+    env_logger::init();
+
     if let Ok(server) = env::var("LIBOMT_DISCOVERY_SERVER") {
         let server = server.trim().to_string();
         if !server.is_empty() {
             if let Err(err) = settings_set_string("DiscoveryServer", &server) {
-                eprintln!("Failed to set DiscoveryServer: {}", err);
+                error!("Failed to set DiscoveryServer: {}", err);
             }
         }
     }
 
     let current = settings_get_string("DiscoveryServer").unwrap_or_else(|| "<default>".to_string());
-    eprintln!("DiscoveryServer: {}", current);
+    info!("DiscoveryServer: {}", current);
 
     let (sender, stream, explicit_address) = parse_cli();
 
@@ -27,7 +30,7 @@ fn main() {
         match discover_matching_sender(sender.as_deref(), stream.as_deref()) {
             Some(addr) => addr,
             None => {
-                eprintln!("No matching OMT sender found for --sender/--stream.");
+                error!("No matching OMT sender found for --sender/--stream.");
                 std::process::exit(1);
             }
         }
@@ -35,13 +38,13 @@ fn main() {
         match discover_first_sender() {
             Some(addr) => addr,
             None => {
-                eprintln!("No OMT senders discovered. Use --sender/--stream or pass an address.");
+                error!("No OMT senders discovered. Use --sender/--stream or pass an address.");
                 std::process::exit(1);
             }
         }
     };
 
-    eprintln!("Connecting to: {}", address);
+    info!("Connecting to: {}", address);
 
     let mut receiver = match Receiver::create(
         &address,
@@ -51,7 +54,7 @@ fn main() {
     ) {
         Ok(r) => r,
         Err(err) => {
-            eprintln!("Failed to create receiver: {}", err);
+            error!("Failed to create receiver: {}", err);
             std::process::exit(1);
         }
     };
@@ -84,15 +87,13 @@ fn main() {
             }
             Ok(None) => {}
             Err(err) => {
-                eprintln!("Receive error: {}", err);
+                error!("Receive error: {}", err);
                 std::thread::sleep(Duration::from_millis(200));
             }
         }
         std::thread::sleep(Duration::from_millis(50));
     }
 }
-
-
 
 fn discover_matching_sender(sender: Option<&str>, stream: Option<&str>) -> Option<Address> {
     let addresses = discover_addresses();
@@ -139,17 +140,12 @@ fn discover_addresses() -> Vec<Address> {
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
         .unwrap_or(1.0);
-    let debug = env::var("LIBOMT_DISCOVERY_DEBUG")
-        .ok()
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
 
     Discovery::get_addresses_with_backoff(
         attempts,
         Timeout::from_millis(initial_delay_ms).as_duration(),
         Timeout::from_millis(max_delay_ms).as_duration(),
         backoff,
-        debug,
     )
 }
 

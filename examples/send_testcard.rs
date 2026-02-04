@@ -1,12 +1,15 @@
 use libomt::{
     Codec, ColorSpace, OutgoingFrame, Quality, Sender, SenderInfo, Source, Timeout, VideoFlags,
 };
+use log::{error, info};
 use std::f32::consts::TAU;
 use std::path::Path;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 fn main() {
+    env_logger::init();
+
     let name = Source::new(format!("omt-rs-testcard-{}", std::process::id()));
     let mut sender = Sender::create(&name, Quality::Default).expect("create sender");
     let info = SenderInfo {
@@ -43,12 +46,14 @@ fn main() {
     let mut audio_phase = 0.0f32;
 
     if let Some(address) = sender.get_address() {
-        println!("Sender address: {}", address);
+        info!("Sender address: {}", address);
     }
 
     let mut last_report = Instant::now();
     let mut sent_frames: u64 = 0;
     let mut last_connections = sender.connections();
+
+    env_logger::init();
 
     loop {
         sender.send(&mut frame);
@@ -79,17 +84,17 @@ fn main() {
                         let text = String::from_utf8_lossy(payload);
                         let text = text.trim_matches('\0');
                         if text.is_empty() {
-                            println!("Metadata: <empty>");
+                            info!("Metadata: <empty>");
                         } else {
-                            println!("Metadata: {}", text);
+                            info!("Metadata: {}", text);
                         }
                     } else {
-                        println!("Metadata frame with no payload");
+                        info!("Metadata frame with no payload");
                     }
                 }
                 Ok(None) => break,
                 Err(err) => {
-                    eprintln!("Metadata receive error: {}", err);
+                    error!("Metadata receive error: {}", err);
                     break;
                 }
             }
@@ -100,14 +105,14 @@ fn main() {
             let fps = sent_frames as f64 / elapsed.as_secs_f64();
             let connections = sender.connections();
             if connections != last_connections {
-                println!("Connections: {} (was {})", connections, last_connections);
+                info!("Connections: {} (was {})", connections, last_connections);
                 last_connections = connections;
             } else {
-                println!("Connections: {}", connections);
+                info!("Connections: {}", connections);
             }
 
             let stats = sender.get_video_statistics();
-            println!(
+            info!(
                 "FPS: {:.2} | bytes_sent={} (+{}) frames={} (+{}) dropped={}",
                 fps,
                 stats.bytes_sent,

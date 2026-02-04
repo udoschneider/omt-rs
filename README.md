@@ -151,7 +151,6 @@ let addresses = Discovery::addresses_with_backoff(
     Timeout::from_millis(200).as_duration(),
     Timeout::from_millis(500).as_duration(),
     2.0,
-    false,
 );
 
 for address in addresses {
@@ -183,11 +182,11 @@ The high-level API is re-exported at the crate root. Newtypes follow `libomt.h` 
 Key APIs:
 
 - `Discovery::get_addresses() -> Vec<Address>`
-- `Discovery::get_addresses_with_options(attempts, delay: Duration, debug)`
-- `Discovery::get_addresses_with_backoff(attempts, initial_delay: Duration, max_delay: Duration, backoff_factor, debug)`
+- `Discovery::get_addresses_with_options(attempts, delay: Duration)`
+- `Discovery::get_addresses_with_backoff(attempts, initial_delay: Duration, max_delay: Duration, backoff_factor)`
 
 
-Discovery uses DNS‑SD (Bonjour/Avahi) or a discovery server depending on your network setup.
+Discovery uses DNS‑SD (Bonjour/Avahi) or a discovery server depending on your network setup. Debug output is controlled via the `RUST_LOG` environment variable (see [Logging](#logging-with-the-log-crate)).
 
 ### Receiver
 
@@ -278,6 +277,39 @@ Received frames are exposed through `FrameRef`, `VideoFrame`, and `AudioFrame`.
 - `settings_set_string(name, value)`
 - `settings_get_integer(name) -> Option<i32>`
 - `settings_set_integer(name, value)`
+
+#### Logging with the `log` crate
+
+The library uses the Rust `log` crate for debug and diagnostic output. To enable logging:
+
+1. Add `env_logger` to your dependencies:
+   ```toml
+   [dependencies]
+   env_logger = "0.11"
+   ```
+
+2. Initialize the logger in your application:
+   ```rust
+   fn main() {
+       env_logger::init();
+       // Your code...
+   }
+   ```
+
+3. Control log level via the `RUST_LOG` environment variable:
+   ```bash
+   RUST_LOG=debug cargo run --example list_senders
+   RUST_LOG=info cargo run
+   RUST_LOG=error cargo run
+   ```
+
+The library uses these log levels:
+- `error!` for failures that prevent normal operation
+- `warn!` for recoverable issues or unexpected conditions  
+- `info!` for general operational information
+- `debug!` for detailed debugging information
+
+Discovery debug output is now controlled via the `RUST_LOG` environment variable instead of explicit debug flags.
 
 ### Timeout helpers
 

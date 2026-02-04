@@ -6,11 +6,11 @@ mod video_data_format;
 mod video_frame;
 
 pub mod discovery;
+pub mod helpers;
 pub mod receiver;
 pub mod sender;
 pub mod settings;
 pub mod types;
-pub mod helpers;
 
 use std::fmt;
 
@@ -27,8 +27,6 @@ pub use types::{
     Source, Timeout, VideoFlags, VideoFrame,
 };
 pub use video_data_format::{VideoDataFormat, RGBA, RGBA16};
-
-
 
 #[derive(Debug)]
 pub enum OmtError {
