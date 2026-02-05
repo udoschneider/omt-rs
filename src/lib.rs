@@ -1,7 +1,7 @@
 mod ffi;
 mod ffi_utils;
 
-mod video_data_format;
+mod video_conversion;
 mod video_frame;
 
 pub mod discovery;
@@ -24,9 +24,8 @@ pub use settings::{
 };
 pub use types::{
     Address, Codec, ColorSpace, FrameRef, FrameType, PreferredVideoFormat, Quality, ReceiveFlags,
-    Source, Timeout, VideoFlags, VideoFrame,
+    Source, Timeout, VideoDataFormat, VideoFlags, VideoFrame,
 };
-pub use video_data_format::{VideoDataFormat, RGBA, RGBA16};
 
 #[derive(Debug)]
 pub enum OmtError {

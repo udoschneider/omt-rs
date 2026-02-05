@@ -239,7 +239,7 @@ fn uyvy_pixel_to_rgb(data: &[u8], stride: usize, x: usize, y: usize) -> Option<(
     let v = *data.get(idx + 2)? as i32;
     let y1 = *data.get(idx + 3)? as i32;
 
-    let y_val = if x % 2 == 0 { y0 } else { y1 };
+    let y_val = if x.is_multiple_of(2) { y0 } else { y1 };
     let (r, g, b) = yuv_to_rgb_bt601(y_val, u, v);
     Some((r, g, b))
 }

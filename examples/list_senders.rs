@@ -3,8 +3,12 @@ use omt::{
     fourcc_to_string, helpers::discover_addresses, FrameType, PreferredVideoFormat, ReceiveFlags,
     Receiver, Timeout, VideoFlags,
 };
+use std::env;
 
 fn main() {
+    if env::var("RUST_LOG").is_err() {
+        env::set_var("RUST_LOG", "info")
+    }
     env_logger::init();
 
     // Use the helper function to discover sender addresses.
@@ -99,7 +103,7 @@ fn describe_video_flags(flags: VideoFlags) -> String {
     }
 
     if parts.is_empty() {
-        "None".to_string()
+        "none".to_string()
     } else {
         parts.join(", ")
     }

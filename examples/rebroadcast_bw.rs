@@ -1,24 +1,42 @@
+use clap::Parser;
 use log::{error, info};
 use omt::{
-    helpers::{discover_first_sender, discover_matching_sender, parse_cli},
-    Codec, ColorSpace, FrameType, OutgoingFrame, PreferredVideoFormat, Quality, ReceiveFlags,
-    Receiver, Sender, Source, Timeout, VideoDataFormat, VideoFlags,
+    helpers::{discover_first_sender, discover_matching_sender},
+    Address, Codec, ColorSpace, FrameType, OutgoingFrame, PreferredVideoFormat, Quality,
+    ReceiveFlags, Receiver, Sender, Source, Timeout, VideoDataFormat, VideoFlags,
 };
 
 use std::time::Duration;
 
+/// Rebroadcast an OMT video stream in black and white
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Sender name to filter discovery (case-insensitive)
+    #[arg(long)]
+    sender: Option<String>,
+
+    /// Stream name to filter discovery (case-insensitive)
+    #[arg(long)]
+    name: Option<String>,
+
+    /// Explicit OMT address to connect to (overrides discovery)
+    #[arg(long)]
+    address: Option<String>,
+}
+
 fn main() {
     env_logger::init();
 
-    let (sender, stream, explicit_address) = parse_cli();
+    let args = Args::parse();
 
-    let address = if let Some(addr) = explicit_address {
-        addr
-    } else if sender.is_some() || stream.is_some() {
-        match discover_matching_sender(sender.as_deref(), stream.as_deref()) {
+    let address = if let Some(addr) = args.address {
+        Address::from(addr)
+    } else if args.sender.is_some() || args.name.is_some() {
+        match discover_matching_sender(args.sender.as_deref(), args.name.as_deref()) {
             Some(addr) => addr,
             None => {
-                error!("No matching OMT sender found for --sender/--stream.");
+                error!("No matching OMT sender found for --sender/--name.");
                 std::process::exit(1);
             }
         }
@@ -26,13 +44,13 @@ fn main() {
         match discover_first_sender() {
             Some(addr) => addr,
             None => {
-                error!("No OMT senders discovered. Use --sender/--stream or pass an address.");
+                error!("No OMT senders discovered. Use --sender/--name or pass an address.");
                 std::process::exit(1);
             }
         }
     };
 
-    let rebroadcast_name = match stream.as_deref() {
+    let rebroadcast_name = match args.name.as_deref() {
         Some(name) => format!("{} (BW)", name),
         None => extract_stream_name(address.as_str())
             .map(|name| format!("{} (BW)", name))
@@ -123,6 +141,7 @@ fn extract_stream_name(address: &str) -> Option<String> {
     Some(address[start + 1..end].trim().to_string())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn bw_from_rgb(
     data: &[u8],
     width: i32,

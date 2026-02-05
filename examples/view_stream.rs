@@ -1,33 +1,51 @@
+use clap::Parser;
 use log::{error, info};
 use omt::{
-    helpers::{discover_first_sender, discover_matching_sender, parse_cli},
-    Codec, ColorSpace, FrameRef, FrameType, PreferredVideoFormat, ReceiveFlags, Receiver, Timeout,
-    VideoFrame,
+    helpers::{discover_first_sender, discover_matching_sender},
+    Address, FrameRef, FrameType, PreferredVideoFormat, ReceiveFlags, Receiver, Timeout,
+    VideoDataFormat,
 };
 use std::env;
 use std::time::{Duration, Instant};
 
+/// View an OMT video stream in the terminal
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Sender name to filter discovery (case-insensitive)
+    #[arg(long)]
+    sender: Option<String>,
+
+    /// Stream name to filter discovery (case-insensitive)
+    #[arg(long)]
+    name: Option<String>,
+
+    /// Explicit OMT address to connect to (overrides discovery)
+    #[arg(long)]
+    address: Option<String>,
+}
+
 fn main() {
     env_logger::init();
 
-    let (sender, stream, explicit_address) = parse_cli();
+    let args = Args::parse();
 
-    let address = if let Some(addr) = explicit_address {
-        addr
-    } else if sender.is_some() || stream.is_some() {
-        match discover_matching_sender(sender.as_deref(), stream.as_deref()) {
+    let address = if let Some(addr) = args.address {
+        Address::from(addr)
+    } else if args.sender.is_some() || args.name.is_some() {
+        match discover_matching_sender(args.sender.as_deref(), args.name.as_deref()) {
             Some(addr) => addr,
             None => {
-                error!("No matching OMT sender found for --sender/--stream.");
-                std::process::exit(1);
+                error!("No matching OMT sender found for --sender/--name.");
+                return;
             }
         }
     } else {
         match discover_first_sender() {
             Some(addr) => addr,
             None => {
-                error!("No OMT senders discovered. Use --sender/--stream or pass an address.");
-                std::process::exit(1);
+                error!("No OMT senders discovered. Use --sender/--name or pass an address.");
+                return;
             }
         }
     };
@@ -85,104 +103,19 @@ fn main() {
 
 fn frame_to_image(frame: &FrameRef) -> Option<image::DynamicImage> {
     let video = frame.video()?;
-    let data = video.raw_data()?;
 
-    match frame.codec() {
-        Codec::BGRA => bgra_to_image(&video, data),
-        Codec::UYVY => uyvy_to_image(&video, data),
-        _ => None,
-    }
-}
+    // Use VideoFrame.data() API to convert to RGB format
+    let rgb_data = video.data(VideoDataFormat::RGB)?;
 
-fn bgra_to_image(video: &VideoFrame, data: &[u8]) -> Option<image::DynamicImage> {
-    let width = video.width() as usize;
-    let height = video.height() as usize;
-    let stride = video.stride() as usize;
+    let width = video.width() as u32;
+    let height = video.height() as u32;
 
-    if width == 0 || height == 0 || stride < width * 4 {
+    // RGB data should be 3 bytes per pixel
+    if rgb_data.len() < (width * height * 3) as usize {
         return None;
     }
 
-    let mut rgb = vec![0u8; width * height * 3];
-
-    for y in 0..height {
-        let row = &data[y * stride..y * stride + width * 4];
-        for x in 0..width {
-            let i = x * 4;
-            let b = row[i];
-            let g = row[i + 1];
-            let r = row[i + 2];
-            let out = (y * width + x) * 3;
-            rgb[out] = r;
-            rgb[out + 1] = g;
-            rgb[out + 2] = b;
-        }
-    }
-
-    let image = image::RgbImage::from_raw(width as u32, height as u32, rgb)?;
+    // Create RGB image from the converted data
+    let image = image::RgbImage::from_raw(width, height, rgb_data)?;
     Some(image::DynamicImage::ImageRgb8(image))
-}
-
-fn uyvy_to_image(video: &VideoFrame, data: &[u8]) -> Option<image::DynamicImage> {
-    let width = video.width() as usize;
-    let height = video.height() as usize;
-    let stride = video.stride() as usize;
-
-    if width == 0 || height == 0 || stride < width * 2 {
-        return None;
-    }
-
-    let mut rgb = vec![0u8; width * height * 3];
-
-    for y in 0..height {
-        let row = &data[y * stride..y * stride + width * 2];
-        let mut x = 0;
-        while x + 1 < width {
-            let i = x * 2;
-            let u = row[i];
-            let y0 = row[i + 1];
-            let v = row[i + 2];
-            let y1 = row[i + 3];
-
-            let (r0, g0, b0) = yuv_to_rgb(y0, u, v, video.color_space());
-            let (r1, g1, b1) = yuv_to_rgb(y1, u, v, video.color_space());
-
-            let out0 = (y * width + x) * 3;
-            rgb[out0] = r0;
-            rgb[out0 + 1] = g0;
-            rgb[out0 + 2] = b0;
-
-            let out1 = (y * width + x + 1) * 3;
-            rgb[out1] = r1;
-            rgb[out1 + 1] = g1;
-            rgb[out1 + 2] = b1;
-
-            x += 2;
-        }
-    }
-
-    let image = image::RgbImage::from_raw(width as u32, height as u32, rgb)?;
-    Some(image::DynamicImage::ImageRgb8(image))
-}
-
-fn yuv_to_rgb(y: u8, u: u8, v: u8, _cs: ColorSpace) -> (u8, u8, u8) {
-    let c = y as i32 - 16;
-    let d = u as i32 - 128;
-    let e = v as i32 - 128;
-
-    let r = (298 * c + 409 * e + 128) / 256;
-    let g = (298 * c - 100 * d - 208 * e + 128) / 256;
-    let b = (298 * c + 516 * d + 128) / 256;
-
-    (clamp_u8(r), clamp_u8(g), clamp_u8(b))
-}
-
-fn clamp_u8(v: i32) -> u8 {
-    if v < 0 {
-        0
-    } else if v > 255 {
-        255
-    } else {
-        v as u8
-    }
 }

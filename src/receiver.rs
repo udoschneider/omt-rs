@@ -132,12 +132,12 @@ pub struct Statistics {
 }
 
 fn sender_info_from_ffi(info: &ffi::OMTSenderInfo) -> Option<SenderInfo> {
-    let product_name = c_char_array_to_string(&info.ProductName);
-    let manufacturer = c_char_array_to_string(&info.Manufacturer);
-    let version = c_char_array_to_string(&info.Version);
-    let reserved1 = c_char_array_to_string(&info.Reserved1);
-    let reserved2 = c_char_array_to_string(&info.Reserved2);
-    let reserved3 = c_char_array_to_string(&info.Reserved3);
+    let product_name = c_char_array_to_string(&info.ProductName[..]);
+    let manufacturer = c_char_array_to_string(&info.Manufacturer[..]);
+    let version = c_char_array_to_string(&info.Version[..]);
+    let reserved1 = c_char_array_to_string(&info.Reserved1[..]);
+    let reserved2 = c_char_array_to_string(&info.Reserved2[..]);
+    let reserved3 = c_char_array_to_string(&info.Reserved3[..]);
 
     let has_any = !product_name.is_empty()
         || !manufacturer.is_empty()

@@ -2,12 +2,16 @@ use log::{error, info};
 use omt::{
     Codec, ColorSpace, OutgoingFrame, Quality, Sender, SenderInfo, Source, Timeout, VideoFlags,
 };
+use std::env;
 use std::f32::consts::TAU;
 use std::path::Path;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 fn main() {
+    if env::var("RUST_LOG").is_err() {
+        env::set_var("RUST_LOG", "info")
+    }
     env_logger::init();
 
     let name = Source::new(format!("omt-rs-testcard-{}", std::process::id()));
@@ -52,8 +56,6 @@ fn main() {
     let mut last_report = Instant::now();
     let mut sent_frames: u64 = 0;
     let mut last_connections = sender.connections();
-
-    env_logger::init();
 
     loop {
         sender.send(&mut frame);

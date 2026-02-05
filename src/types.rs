@@ -287,6 +287,7 @@ impl From<ColorSpace> for ffi::OMTColorSpace {
 bitflags! {
     /// Bitflags describing video frame properties (alpha, interlaced, etc.).
     #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+    #[allow(non_snake_case)]
     pub struct VideoFlags: i32 {
         const NONE = 0;
         const INTERLACED = 1;
@@ -353,6 +354,7 @@ impl From<PreferredVideoFormat> for ffi::OMTPreferredVideoFormat {
 bitflags! {
     /// Receiver configuration flags (preview/compressed delivery).
     #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+    #[allow(non_snake_case)]
     pub struct ReceiveFlags: i32 {
         const NONE = 0;
         const PREVIEW = 1;
@@ -371,6 +373,18 @@ impl From<ReceiveFlags> for i32 {
     fn from(value: ReceiveFlags) -> Self {
         value.bits()
     }
+}
+
+/// Requested output format for video data conversion.
+pub enum VideoDataFormat {
+    /// 8-bit per component RGB.
+    RGB,
+    /// 8-bit per component RGBA, straight alpha.
+    RGBA,
+    /// 16-bit per component RGB.
+    RGB16,
+    /// 16-bit per component RGBA, straight alpha.
+    RGBA16,
 }
 
 /// Borrowed view of a received media frame.

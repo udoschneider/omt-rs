@@ -8,6 +8,7 @@ pub const OMT_MAX_STRING_LENGTH: usize = 1024;
 
 #[repr(i32)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[allow(non_snake_case)]
 pub enum OMTFrameType {
     None = 0,
     Metadata = 1,
