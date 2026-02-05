@@ -1,11 +1,11 @@
-use omt::{Discovery, Quality, Sender, Source};
+use omt::{Discovery, Name, Quality, Sender};
 use std::thread::sleep;
 use std::time::Duration;
 
 #[test]
 fn discovery_finds_sender() {
-    let source = Source::from(format!("omt-test-sender-{}", std::process::id()));
-    let _sender = Sender::create(&source, Quality::Default).expect("create sender");
+    let name = Name::from(format!("omt-test-sender-{}", std::process::id()));
+    let _sender = Sender::create(&name, Quality::Default).expect("create sender");
 
     // Give the sender a moment to advertise via DNS-SD / discovery server.
     let mut found = false;
@@ -20,7 +20,7 @@ fn discovery_finds_sender() {
 
         if addresses
             .iter()
-            .any(|addr| addr.as_str().contains(source.as_str()))
+            .any(|addr| addr.as_str().contains(name.as_str()))
         {
             found = true;
             break;
@@ -32,6 +32,6 @@ fn discovery_finds_sender() {
     assert!(
         found,
         "Expected discovery to find sender name '{}' in advertised addresses",
-        source
+        name
     );
 }

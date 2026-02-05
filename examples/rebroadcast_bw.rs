@@ -2,8 +2,8 @@ use clap::Parser;
 use log::{error, info};
 use omt::{
     helpers::{discover_first_sender, discover_matching_sender},
-    Address, Codec, ColorSpace, FrameType, OutgoingFrame, PreferredVideoFormat, Quality,
-    ReceiveFlags, Receiver, Sender, Source, Timeout, VideoDataFormat, VideoFlags,
+    Address, Codec, ColorSpace, FrameType, Name, OutgoingFrame, PreferredVideoFormat, Quality,
+    ReceiveFlags, Receiver, Sender, Timeout, VideoDataFormat, VideoFlags,
 };
 
 use std::time::Duration;
@@ -73,8 +73,8 @@ fn main() {
         }
     };
 
-    let source = Source::from(rebroadcast_name.clone());
-    let sender = match Sender::create(&source, Quality::Default) {
+    let name = Name::from(rebroadcast_name.clone());
+    let sender = match Sender::create(&name, Quality::Default) {
         Ok(s) => s,
         Err(err) => {
             error!("Failed to create sender: {}", err);

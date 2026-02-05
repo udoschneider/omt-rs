@@ -24,46 +24,8 @@ use std::time::Duration;
 mod address;
 pub use address::Address;
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct Source(String);
-
-impl Source {
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
-    }
-
-    pub fn as_str(&self) -> &str {
-        self.0.as_str()
-    }
-
-    pub fn into_inner(self) -> String {
-        self.0
-    }
-}
-
-impl From<String> for Source {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-
-impl From<&str> for Source {
-    fn from(value: &str) -> Self {
-        Self(value.to_string())
-    }
-}
-
-impl std::fmt::Display for Source {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl AsRef<str> for Source {
-    fn as_ref(&self) -> &str {
-        self.0.as_str()
-    }
-}
+mod name;
+pub use name::Name;
 
 /// Standard timeout type used by the safe API.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]

@@ -1,6 +1,6 @@
 use log::{error, info};
 use omt::{
-    Codec, ColorSpace, OutgoingFrame, Quality, Sender, SenderInfo, Source, Timeout, VideoFlags,
+    Codec, ColorSpace, Name, OutgoingFrame, Quality, Sender, SenderInfo, Timeout, VideoFlags,
 };
 use std::env;
 use std::f32::consts::TAU;
@@ -14,7 +14,7 @@ fn main() {
     }
     env_logger::init();
 
-    let name = Source::new(format!("omt-rs-testcard-{}", std::process::id()));
+    let name = Name::new(format!("omt-rs-testcard-{}", std::process::id()));
     let mut sender = Sender::create(&name, Quality::Default).expect("create sender");
     let info = SenderInfo {
         product_name: "omt-rs".to_string(),

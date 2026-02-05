@@ -1,6 +1,6 @@
 use omt::{
-    Address, Codec, ColorSpace, FrameRef, FrameType, OutgoingFrame, PreferredVideoFormat, Quality,
-    ReceiveFlags, Receiver, Sender, Source, Timeout, VideoFlags,
+    Address, Codec, ColorSpace, FrameRef, FrameType, Name, OutgoingFrame, PreferredVideoFormat,
+    Quality, ReceiveFlags, Receiver, Sender, Timeout, VideoFlags,
 };
 use std::collections::HashSet;
 use std::path::Path;
@@ -9,11 +9,11 @@ use std::time::{Duration, Instant};
 
 #[test]
 fn sender_receiver_transfers_testcard() {
-    let source = Source::from(format!("omt-testcard-{}", std::process::id()));
-    let sender = Sender::create(&source, Quality::Default).expect("create sender");
+    let name = Name::from(format!("omt-testcard-{}", std::process::id()));
+    let sender = Sender::create(&name, Quality::Default).expect("create sender");
 
     let address: Address = wait_for_sender_address(&sender)
-        .unwrap_or_else(|| panic!("sender address not available for '{}'", source));
+        .unwrap_or_else(|| panic!("sender address not available for '{}'", name));
 
     let mut receiver = Receiver::create(
         &address,
@@ -75,7 +75,7 @@ fn sender_receiver_transfers_testcard() {
     assert!(
         matched,
         "did not receive the expected testcard image from sender '{}'",
-        source
+        name
     );
 }
 

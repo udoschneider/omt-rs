@@ -8,7 +8,7 @@
 use crate::ffi;
 use crate::ffi_utils::write_c_char_array;
 use crate::receiver::{SenderInfo, Statistics, Tally};
-use crate::types::{Address, Codec, ColorSpace, FrameRef, Quality, Source, Timeout, VideoFlags};
+use crate::types::{Address, Codec, ColorSpace, FrameRef, Name, Quality, Timeout, VideoFlags};
 use crate::OmtError;
 use std::ffi::CString;
 use std::ptr::NonNull;
@@ -169,8 +169,8 @@ impl Sender {
     /// Creates a new sender and publishes it on the network.
     ///
     /// When `quality` is `Default`, receivers can suggest a preferred quality.
-    pub fn create(source: &Source, quality: Quality) -> Result<Self, OmtError> {
-        let c_name = CString::new(source.as_str()).map_err(|_| OmtError::InvalidCString)?;
+    pub fn create(name: &Name, quality: Quality) -> Result<Self, OmtError> {
+        let c_name = CString::new(name.as_str()).map_err(|_| OmtError::InvalidCString)?;
         let handle = unsafe { ffi::omt_send_create(c_name.as_ptr(), quality.into()) };
         let handle = NonNull::new(handle).ok_or(OmtError::NullHandle)?;
         Ok(Self { handle })
