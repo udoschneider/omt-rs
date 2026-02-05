@@ -52,6 +52,22 @@ impl<'a> VideoFrame<'a> {
         Some(unsafe { std::slice::from_raw_parts(self.raw.Data as *const u8, len) })
     }
 
+    /// Converts the video frame to the specified output format.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(Vec<u8>)` containing the converted pixel data, or `None` if the
+    /// conversion is not supported.
+    ///
+    /// # Note
+    ///
+    /// Not all combinations of input codecs, flags, and output formats have been
+    /// implemented or tested yet. This method may return `None` for unsupported
+    /// conversions, particularly for:
+    /// - 16-bit output formats (`RGB16`, `RGBA16`)
+    /// - Certain codec/flag combinations
+    /// - Alpha channel handling for formats like `UYVA`
+    /// - Premultiplied alpha (`PREMULTIPLIED` flag) - not currently handled
     pub fn data(&self, format: VideoDataFormat) -> Option<Vec<u8>> {
         video_conversion::convert(self, format)
     }

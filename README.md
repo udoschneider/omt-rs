@@ -252,7 +252,7 @@ Received frames are exposed through `FrameRef`, `VideoFrame`, and `AudioFrame`.
 - `color_space()`
 - `flags() -> VideoFlags`
 - `raw_data() -> Option<&[u8]>` (uncompressed pixel data)
-- `data(format: VideoDataFormat) -> Option<Vec<u8>>` (converted RGB/RGBA output)
+- `data(format: VideoDataFormat) -> Option<Vec<u8>>` (converted RGB/RGBA output; note: not all codec/format combinations are implemented)
 - `compressed_data() -> Option<&[u8]>` (VMX1 if `ReceiveFlags::INCLUDE_COMPRESSED` or `COMPRESSED_ONLY`)
 - `metadata() -> Option<&[u8]>` (per‑frame metadata payload)
 
@@ -369,18 +369,26 @@ When receiving uncompressed video, OMT delivers only `UYVY`, `UYVA`, `BGRA`, or 
 - `NONE` — no special flags.
 - `INTERLACED` — frame is interlaced.
 - `ALPHA` — frame contains an alpha channel (if unset, `BGRA` is treated as `BGRX` and `UYVA` as `UYVY`).
-- `PREMULTIPLIED` — alpha channel is premultiplied (only meaningful when `ALPHA` is set).
+- `PREMULTIPLIED` — alpha channel is premultiplied (only meaningful when `ALPHA` is set). Note: The current video conversion implementation does not handle premultiplied alpha differently from straight alpha.
 - `PREVIEW` — sender emitted a 1/8th preview frame.
 - `HIGH_BIT_DEPTH` — set for `P216`/`PA16` sources and for `VMX1` that originated from those formats, so decoders can select the right output format.
 
 ### Video data formats (`VideoDataFormat`)
 
-- `RGB` (8-bit/component)
-- `RGBAs` (8-bit/component, straight alpha) — alias: `RGBA`
-- `RGBAp` (8-bit/component, premultiplied alpha)
-- `RGB16` (16-bit/component)
-- `RGBAs16` (16-bit/component, straight alpha) — alias: `RGBA16`
-- `RGBAp16` (16-bit/component, premultiplied alpha)
+- `RGB` (8-bit/component) — **Fully implemented** for common 8-bit codecs
+- `RGBA` (8-bit/component, straight alpha) — **Fully implemented** for common 8-bit codecs. Note: The `PREMULTIPLIED` flag is not currently handled during conversion.
+- `RGB16` (16-bit/component) — **Not yet implemented** (returns `None`)
+- `RGBA16` (16-bit/component, straight alpha) — **Not yet implemented** (returns `None`)
+
+**Note:** Not all combinations of input codecs, flags, and output formats have been implemented or tested yet. The `VideoFrame::data()` method may return `None` for unsupported conversions, particularly for:
+
+- 16-bit output formats (`RGB16`, `RGBA16`) — not yet implemented
+- 16-bit input formats (`P216`, `PA16`) — limited or no support
+- Alpha channel handling for formats like `UYVA` — basic support only
+- Premultiplied alpha (`PREMULTIPLIED` flag) — not currently handled during conversion
+- Certain codec/flag combinations — may return `None`
+
+For 8-bit formats (`RGB`, `RGBA`), support is available for common codecs: `UYVY`, `YUY2`, `NV12`, `YV12`, `BGRA`. Other codecs may have limited or no conversion support.
 
 ---
 

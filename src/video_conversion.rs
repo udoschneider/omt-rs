@@ -1,3 +1,14 @@
+//! Video frame format conversion utilities.
+//!
+//! This module provides functions to convert video frames between different pixel formats.
+//! Note that not all combinations of input codecs, flags, and output formats have been
+//! implemented or tested yet. Some conversions may return `None`, particularly for:
+//! - 16-bit output formats (`RGB16`, `RGBA16`)
+//! - Certain codec/flag combinations
+//! - Alpha channel handling for formats like `UYVA`
+//! - 16-bit input formats (`P216`, `PA16`)
+//! - Premultiplied alpha (`PREMULTIPLIED` flag) - not currently handled
+
 use crate::types::{Codec, ColorSpace, VideoDataFormat, VideoFlags};
 use crate::VideoFrame;
 use rgb::bytemuck;
@@ -7,6 +18,28 @@ use yuv::{
     YuvStandardMatrix,
 };
 
+/// Converts a video frame to the specified output format.
+///
+/// # Arguments
+///
+/// * `frame` - The video frame to convert
+/// * `format` - The desired output format
+///
+/// # Returns
+///
+/// Returns `Some(Vec<u8>)` containing the converted pixel data, or `None` if the
+/// conversion is not supported.
+///
+/// # Note
+///
+/// Not all combinations of input codecs, flags, and output formats have been
+/// implemented or tested yet. This function may return `None` for unsupported
+/// conversions, particularly for:
+/// - 16-bit output formats (`RGB16`, `RGBA16`)
+/// - Certain codec/flag combinations
+/// - Alpha channel handling for formats like `UYVA`
+/// - 16-bit input formats (`P216`, `PA16`)
+/// - Premultiplied alpha (`PREMULTIPLIED` flag) - not currently handled
 pub fn convert(frame: &VideoFrame, format: VideoDataFormat) -> Option<Vec<u8>> {
     match format {
         VideoDataFormat::RGB => {
