@@ -1,6 +1,7 @@
 use crate::ffi;
-use crate::types::{Codec, ColorSpace, VideoDataFormat, VideoFlags};
+use crate::types::{Codec, ColorSpace, VideoFlags};
 use crate::video_conversion;
+use rgb::bytemuck;
 
 /// Video-specific accessors for a received media frame.
 pub struct VideoFrame<'a> {
@@ -52,24 +53,60 @@ impl<'a> VideoFrame<'a> {
         Some(unsafe { std::slice::from_raw_parts(self.raw.Data as *const u8, len) })
     }
 
-    /// Converts the video frame to the specified output format.
+    /// Converts the video frame to 8-bit RGB format.
     ///
     /// # Returns
     ///
-    /// Returns `Some(Vec<u8>)` containing the converted pixel data, or `None` if the
-    /// conversion is not supported.
+    /// Returns `Some(Vec<u8>)` containing the converted RGB pixel data (3 bytes per pixel),
+    /// or `None` if the conversion is not supported.
     ///
     /// # Note
     ///
-    /// Not all combinations of input codecs, flags, and output formats have been
-    /// implemented or tested yet. This method may return `None` for unsupported
-    /// conversions, particularly for:
-    /// - 16-bit output formats (`RGB16`, `RGBA16`)
-    /// - Certain codec/flag combinations
-    /// - Alpha channel handling for formats like `UYVA`
-    /// - Premultiplied alpha (`PREMULTIPLIED` flag) - not currently handled
-    pub fn data(&self, format: VideoDataFormat) -> Option<Vec<u8>> {
-        video_conversion::convert(self, format)
+    /// Not all combinations of input codecs and flags have been implemented or tested yet.
+    pub fn rgb8_data(&self) -> Option<Vec<u8>> {
+        video_conversion::to_rgb8(self).map(|data| bytemuck::cast_slice(&data).to_vec())
+    }
+
+    /// Converts the video frame to 8-bit RGBA format.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(Vec<u8>)` containing the converted RGBA pixel data (4 bytes per pixel),
+    /// or `None` if the conversion is not supported.
+    ///
+    /// # Note
+    ///
+    /// Not all combinations of input codecs and flags have been implemented or tested yet.
+    pub fn rgba8_data(&self) -> Option<Vec<u8>> {
+        video_conversion::to_rgba8(self).map(|data| bytemuck::cast_slice(&data).to_vec())
+    }
+
+    /// Converts the video frame to 16-bit RGB format.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(Vec<u8>)` containing the converted RGB16 pixel data (6 bytes per pixel),
+    /// or `None` if the conversion is not supported.
+    ///
+    /// # Note
+    ///
+    /// 16-bit output formats are not currently implemented and will always return `None`.
+    pub fn rgb16_data(&self) -> Option<Vec<u8>> {
+        video_conversion::to_rgb16(self).map(|data| bytemuck::cast_slice(&data).to_vec())
+    }
+
+    /// Converts the video frame to 16-bit RGBA format.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(Vec<u8>)` containing the converted RGBA16 pixel data (8 bytes per pixel),
+    /// or `None` if the conversion is not supported.
+    ///
+    /// # Note
+    ///
+    /// 16-bit output formats are not currently implemented and will always return `None`.
+    pub fn rgba16_data(&self) -> Option<Vec<u8>> {
+        video_conversion::to_rgba16(self).map(|data| bytemuck::cast_slice(&data).to_vec())
     }
 
     pub fn compressed_data(&self) -> Option<&'a [u8]> {

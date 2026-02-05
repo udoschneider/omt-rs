@@ -3,7 +3,6 @@ use log::{error, info};
 use omt::{
     helpers::{discover_first_sender, discover_matching_sender},
     Address, FrameRef, FrameType, PreferredVideoFormat, ReceiveFlags, Receiver, Timeout,
-    VideoDataFormat,
 };
 use std::env;
 use std::time::{Duration, Instant};
@@ -104,8 +103,8 @@ fn main() {
 fn frame_to_image(frame: &FrameRef) -> Option<image::DynamicImage> {
     let video = frame.video()?;
 
-    // Use VideoFrame.data() API to convert to RGB format
-    let rgb_data = video.data(VideoDataFormat::RGB)?;
+    // Use VideoFrame.rgb8_data() API to convert to RGB format
+    let rgb_data = video.rgb8_data()?;
 
     let width = video.width() as u32;
     let height = video.height() as u32;

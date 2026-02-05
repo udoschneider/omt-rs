@@ -24,7 +24,7 @@ pub use settings::{
 };
 pub use types::{
     Address, Codec, ColorSpace, FrameRef, FrameType, Name, PreferredVideoFormat, Quality,
-    ReceiveFlags, Timeout, VideoDataFormat, VideoFlags, VideoFrame,
+    ReceiveFlags, Timeout, VideoFlags, VideoFrame,
 };
 
 #[derive(Debug)]

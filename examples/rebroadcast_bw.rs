@@ -3,7 +3,7 @@ use log::{error, info};
 use omt::{
     helpers::{discover_first_sender, discover_matching_sender},
     Address, Codec, ColorSpace, FrameType, Name, OutgoingFrame, PreferredVideoFormat, Quality,
-    ReceiveFlags, Receiver, Sender, Timeout, VideoDataFormat, VideoFlags,
+    ReceiveFlags, Receiver, Sender, Timeout, VideoFlags,
 };
 
 use std::time::Duration;
@@ -95,7 +95,7 @@ fn main() {
                     let width = video.width();
                     let height = video.height();
 
-                    let data = match video.data(VideoDataFormat::RGB) {
+                    let data = match video.rgb8_data() {
                         Some(d) => d,
                         None => {
                             std::thread::sleep(Duration::from_millis(10));

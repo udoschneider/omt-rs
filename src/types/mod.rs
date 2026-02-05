@@ -299,18 +299,6 @@ impl From<ReceiveFlags> for i32 {
     }
 }
 
-/// Requested output format for video data conversion.
-pub enum VideoDataFormat {
-    /// 8-bit per component RGB.
-    RGB,
-    /// 8-bit per component RGBA, straight alpha.
-    RGBA,
-    /// 16-bit per component RGB.
-    RGB16,
-    /// 16-bit per component RGBA, straight alpha.
-    RGBA16,
-}
-
 /// Borrowed view of a received media frame.
 ///
 /// Valid only until the next receive call on the same receiver/sender.
