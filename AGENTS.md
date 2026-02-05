@@ -105,3 +105,7 @@ pub fn add(a: i32, b: i32) -> i32 { ... }
 - [ ] New code is covered by tests.
 - [ ] Public API is documented.
 - [ ] No `unwrap()` in production code.
+
+### 9. Additional documentation
+
+If you encounter unknown concepts (e.g. codec names) check `libomt.h` for details.
