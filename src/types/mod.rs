@@ -24,6 +24,9 @@ use std::time::Duration;
 mod address;
 pub use address::Address;
 
+mod codec;
+pub use codec::Codec;
+
 mod name;
 pub use name::Name;
 
@@ -92,59 +95,6 @@ impl From<FrameType> for ffi::OMTFrameType {
             FrameType::Video => ffi::OMTFrameType::Video,
             FrameType::Audio => ffi::OMTFrameType::Audio,
             FrameType::None => ffi::OMTFrameType::None,
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-/// Supported pixel formats and codec identifiers used by OMT.
-pub enum Codec {
-    VMX1,
-    FPA1,
-    UYVY,
-    YUY2,
-    BGRA,
-    NV12,
-    YV12,
-    UYVA,
-    P216,
-    PA16,
-    Unknown(i32),
-}
-
-impl From<ffi::OMTCodec> for Codec {
-    fn from(value: ffi::OMTCodec) -> Self {
-        let raw = value as i32;
-        match raw {
-            x if x == ffi::OMTCodec::VMX1 as i32 => Codec::VMX1,
-            x if x == ffi::OMTCodec::FPA1 as i32 => Codec::FPA1,
-            x if x == ffi::OMTCodec::UYVY as i32 => Codec::UYVY,
-            x if x == ffi::OMTCodec::YUY2 as i32 => Codec::YUY2,
-            x if x == ffi::OMTCodec::BGRA as i32 => Codec::BGRA,
-            x if x == ffi::OMTCodec::NV12 as i32 => Codec::NV12,
-            x if x == ffi::OMTCodec::YV12 as i32 => Codec::YV12,
-            x if x == ffi::OMTCodec::UYVA as i32 => Codec::UYVA,
-            x if x == ffi::OMTCodec::P216 as i32 => Codec::P216,
-            x if x == ffi::OMTCodec::PA16 as i32 => Codec::PA16,
-            _ => Codec::Unknown(raw),
-        }
-    }
-}
-
-impl Codec {
-    pub fn fourcc(self) -> u32 {
-        match self {
-            Codec::VMX1 => ffi::OMTCodec::VMX1 as u32,
-            Codec::FPA1 => ffi::OMTCodec::FPA1 as u32,
-            Codec::UYVY => ffi::OMTCodec::UYVY as u32,
-            Codec::YUY2 => ffi::OMTCodec::YUY2 as u32,
-            Codec::BGRA => ffi::OMTCodec::BGRA as u32,
-            Codec::NV12 => ffi::OMTCodec::NV12 as u32,
-            Codec::YV12 => ffi::OMTCodec::YV12 as u32,
-            Codec::UYVA => ffi::OMTCodec::UYVA as u32,
-            Codec::P216 => ffi::OMTCodec::P216 as u32,
-            Codec::PA16 => ffi::OMTCodec::PA16 as u32,
-            Codec::Unknown(v) => v as u32,
         }
     }
 }
