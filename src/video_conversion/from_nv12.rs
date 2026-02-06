@@ -78,6 +78,7 @@ pub fn nv12_to_rgba8(
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_utls::yuv_utils;
     use super::*;
     use yuv::YuvRange::*;
     use yuv::YuvStandardMatrix::*;
@@ -90,19 +91,17 @@ mod tests {
         let mut nv12_data = vec![0u8; y_plane_size + uv_plane_size * 2];
 
         // Set Y plane to middle gray
-        let y_value = match yuv_range {
-            Limited => 118, // Middle gray in limited range (16-235)
-            Full => 128,    // Middle gray in full range (0-255)
-        };
+        let y_value = yuv_utils::middle_gray_y(yuv_range);
 
         for i in 0..y_plane_size {
             nv12_data[i] = y_value;
         }
 
         // Set UV plane to neutral (128, 128) - no color
+        let (u_value, v_value) = yuv_utils::neutral_uv();
         for i in 0..uv_plane_size {
-            nv12_data[y_plane_size + i * 2] = 128; // U
-            nv12_data[y_plane_size + i * 2 + 1] = 128; // V
+            nv12_data[y_plane_size + i * 2] = u_value; // U
+            nv12_data[y_plane_size + i * 2 + 1] = v_value; // V
         }
 
         nv12_data
@@ -118,27 +117,11 @@ mod tests {
         // Create simple color bars: black, white, red, green, blue, yellow, cyan, magenta
         // Note: bar_width = width / 8 (not used directly but implied by bar_index calculation)
 
-        // Y values for different colors in limited/full range
-        let (black_y, white_y) = match yuv_range {
-            Limited => (16, 235),
-            Full => (0, 255),
-        };
-
         // Fill Y plane with color bars
         for y in 0..height {
             for x in 0..width {
                 let bar_index = (x * 8) / width;
-                let y_value = match bar_index {
-                    0 => black_y, // Black
-                    1 => white_y, // White
-                    2 => 76,      // Red (approximate)
-                    3 => 150,     // Green (approximate)
-                    4 => 29,      // Blue (approximate)
-                    5 => 225,     // Yellow (approximate)
-                    6 => 179,     // Cyan (approximate)
-                    7 => 105,     // Magenta (approximate)
-                    _ => black_y,
-                };
+                let y_value = yuv_utils::color_bar_y(bar_index, yuv_range);
                 nv12_data[y * width + x] = y_value;
             }
         }
@@ -148,17 +131,7 @@ mod tests {
         for y in (0..height).step_by(2) {
             for x in (0..width).step_by(2) {
                 let bar_index = (x * 8) / width;
-                let (u_value, v_value) = match bar_index {
-                    0 => (128, 128), // Black
-                    1 => (128, 128), // White
-                    2 => (84, 255),  // Red
-                    3 => (149, 43),  // Green
-                    4 => (255, 107), // Blue
-                    5 => (0, 148),   // Yellow
-                    6 => (168, 0),   // Cyan
-                    7 => (255, 212), // Magenta
-                    _ => (128, 128),
-                };
+                let (u_value, v_value) = yuv_utils::color_bar_uv(bar_index);
 
                 let uv_index = y_plane_size + (y / 2) * width + x;
                 nv12_data[uv_index] = u_value;
@@ -519,12 +492,8 @@ mod tests {
 
     #[test]
     fn test_nv12_conversion_edge_cases() {
-        // Test with different image dimensions
-        let test_cases = vec![
-            (4, 4),   // Small image
-            (16, 16), // Power of two
-            (2, 2),   // Minimum for 4:2:0
-        ];
+        // Test with different image dimensions using common 4:2:0 test dimensions
+        let test_cases = yuv_utils::planar_420_test_dimensions();
 
         for (width, height) in test_cases {
             let stride = width;

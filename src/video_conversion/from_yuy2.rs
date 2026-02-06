@@ -68,6 +68,7 @@ pub fn yuy2_to_rgba8(
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_utls::yuv_utils;
     use super::*;
     use yuv::YuvRange::*;
     use yuv::YuvStandardMatrix::*;
@@ -79,18 +80,16 @@ mod tests {
         let mut yuy2_data = vec![0u8; data_size];
 
         // Set Y values to middle gray
-        let y_value = match yuv_range {
-            Limited => 118, // Middle gray in limited range (16-235)
-            Full => 128,    // Middle gray in full range (0-255)
-        };
+        let y_value = yuv_utils::middle_gray_y(yuv_range);
 
         // Set UV values to neutral (128, 128) - no color
         for i in 0..(width * height / 2) {
             let base_idx = i * 4;
+            let (u_value, v_value) = yuv_utils::neutral_uv();
             yuy2_data[base_idx] = y_value; // Y0
-            yuy2_data[base_idx + 1] = 128; // U
+            yuy2_data[base_idx + 1] = u_value; // U
             yuy2_data[base_idx + 2] = y_value; // Y1
-            yuy2_data[base_idx + 3] = 128; // V
+            yuy2_data[base_idx + 3] = v_value; // V
         }
 
         yuy2_data
@@ -103,10 +102,7 @@ mod tests {
         let mut yuy2_data = vec![0u8; data_size];
 
         // Y values for different colors in limited/full range
-        let (black_y, white_y) = match yuv_range {
-            Limited => (16, 235),
-            Full => (0, 255),
-        };
+        let _ = yuv_utils::black_white_y(yuv_range); // Used by color_bar_y internally
 
         // Create simple color bars: black, white, red, green, blue, yellow, cyan, magenta
         // Note: bar_width = width / 8 (not used directly but implied by bar_index calculation)
@@ -117,42 +113,12 @@ mod tests {
                 let bar_index0 = (x * 8) / width;
                 let bar_index1 = ((x + 1) * 8) / width;
 
-                let y_value0 = match bar_index0 {
-                    0 => black_y, // Black
-                    1 => white_y, // White
-                    2 => 76,      // Red (approximate)
-                    3 => 150,     // Green (approximate)
-                    4 => 29,      // Blue (approximate)
-                    5 => 225,     // Yellow (approximate)
-                    6 => 179,     // Cyan (approximate)
-                    7 => 105,     // Magenta (approximate)
-                    _ => black_y,
-                };
+                let y_value0 = yuv_utils::color_bar_y(bar_index0, yuv_range);
 
-                let y_value1 = match bar_index1 {
-                    0 => black_y, // Black
-                    1 => white_y, // White
-                    2 => 76,      // Red (approximate)
-                    3 => 150,     // Green (approximate)
-                    4 => 29,      // Blue (approximate)
-                    5 => 225,     // Yellow (approximate)
-                    6 => 179,     // Cyan (approximate)
-                    7 => 105,     // Magenta (approximate)
-                    _ => black_y,
-                };
+                let y_value1 = yuv_utils::color_bar_y(bar_index1, yuv_range);
 
                 // Use average UV values for the two pixels
-                let (u_value, v_value) = match bar_index0 {
-                    0 => (128, 128), // Black
-                    1 => (128, 128), // White
-                    2 => (84, 255),  // Red
-                    3 => (149, 43),  // Green
-                    4 => (255, 107), // Blue
-                    5 => (0, 148),   // Yellow
-                    6 => (168, 0),   // Cyan
-                    7 => (255, 212), // Magenta
-                    _ => (128, 128),
-                };
+                let (u_value, v_value) = yuv_utils::color_bar_uv(bar_index0);
 
                 let base_idx = (y * width + x) * 2;
                 yuy2_data[base_idx] = y_value0; // Y0
@@ -578,14 +544,7 @@ mod tests {
     fn test_yuy2_conversion_edge_cases() {
         // Test various image dimensions
         // YUY2 is a packed 4:2:2 format that requires even width
-        let test_dimensions = vec![
-            (2, 2),   // Minimum size (even width required)
-            (4, 4),   // Small even dimensions
-            (6, 4),   // Even width, even height
-            (8, 6),   // Even dimensions
-            (16, 9),  // Common aspect ratio (even width)
-            (32, 24), // Larger dimensions
-        ];
+        let test_dimensions = yuv_utils::packed_422_test_dimensions();
 
         for (width, height) in test_dimensions {
             let stride = width * 2; // YUY2 uses 2 bytes per pixel

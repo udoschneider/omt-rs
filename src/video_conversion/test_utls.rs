@@ -3,6 +3,8 @@
 //! This module provides helper functions for generating test data in various pixel formats.
 //! The helper functions create predictable color patterns based on CGA (Color Graphics Adapter)
 //! color palette with alpha variations for testing video conversion functions.
+//!
+//! Also provides common YUV test utilities for generating test data in various YUV formats.
 
 use rgb::*;
 
@@ -212,6 +214,152 @@ fn cga_colors() -> Vec<Rgb<f32>> {
 #[cfg(test)]
 pub fn cga_alpha_colors() -> Vec<Rgba<f32>> {
     (0..64).map(|i| cga_alpha_color(i)).collect()
+}
+
+/// YUV test utilities for generating test data in various YUV formats.
+#[cfg(test)]
+pub mod yuv_utils {
+    use yuv::YuvRange;
+
+    /// Get Y value for middle gray based on YUV range.
+    ///
+    /// # Arguments
+    ///
+    /// * `yuv_range` - The YUV range (Limited or Full)
+    ///
+    /// # Returns
+    ///
+    /// Y value for middle gray:
+    /// - Limited range: 118 (middle of 16-235)
+    /// - Full range: 128 (middle of 0-255)
+    pub fn middle_gray_y(yuv_range: YuvRange) -> u8 {
+        match yuv_range {
+            YuvRange::Limited => 118,
+            YuvRange::Full => 128,
+        }
+    }
+
+    /// Get black and white Y values based on YUV range.
+    ///
+    /// # Arguments
+    ///
+    /// * `yuv_range` - The YUV range (Limited or Full)
+    ///
+    /// # Returns
+    ///
+    /// Tuple of (black_y, white_y):
+    /// - Limited range: (16, 235)
+    /// - Full range: (0, 255)
+    pub fn black_white_y(yuv_range: YuvRange) -> (u8, u8) {
+        match yuv_range {
+            YuvRange::Limited => (16, 235),
+            YuvRange::Full => (0, 255),
+        }
+    }
+
+    /// Get Y value for a color bar based on index and YUV range.
+    ///
+    /// # Arguments
+    ///
+    /// * `bar_index` - Index of the color bar (0-7)
+    /// * `yuv_range` - The YUV range (Limited or Full)
+    ///
+    /// # Returns
+    ///
+    /// Y value for the specified color bar:
+    /// - 0: Black
+    /// - 1: White
+    /// - 2: Red (approximate)
+    /// - 3: Green (approximate)
+    /// - 4: Blue (approximate)
+    /// - 5: Yellow (approximate)
+    /// - 6: Cyan (approximate)
+    /// - 7: Magenta (approximate)
+    pub fn color_bar_y(bar_index: usize, yuv_range: YuvRange) -> u8 {
+        let (black_y, white_y) = black_white_y(yuv_range);
+
+        match bar_index {
+            0 => black_y, // Black
+            1 => white_y, // White
+            2 => 76,      // Red (approximate)
+            3 => 150,     // Green (approximate)
+            4 => 29,      // Blue (approximate)
+            5 => 225,     // Yellow (approximate)
+            6 => 179,     // Cyan (approximate)
+            7 => 105,     // Magenta (approximate)
+            _ => black_y,
+        }
+    }
+
+    /// Get UV values for a color bar based on index.
+    ///
+    /// # Arguments
+    ///
+    /// * `bar_index` - Index of the color bar (0-7)
+    ///
+    /// # Returns
+    ///
+    /// Tuple of (u_value, v_value) for the specified color bar:
+    /// - 0: (128, 128) - Black
+    /// - 1: (128, 128) - White
+    /// - 2: (84, 255)  - Red
+    /// - 3: (149, 43)  - Green
+    /// - 4: (255, 107) - Blue
+    /// - 5: (0, 148)   - Yellow
+    /// - 6: (168, 0)   - Cyan
+    /// - 7: (255, 212) - Magenta
+    pub fn color_bar_uv(bar_index: usize) -> (u8, u8) {
+        match bar_index {
+            0 => (128, 128), // Black
+            1 => (128, 128), // White
+            2 => (84, 255),  // Red
+            3 => (149, 43),  // Green
+            4 => (255, 107), // Blue
+            5 => (0, 148),   // Yellow
+            6 => (168, 0),   // Cyan
+            7 => (255, 212), // Magenta
+            _ => (128, 128),
+        }
+    }
+
+    /// Get neutral UV values (no color).
+    ///
+    /// # Returns
+    ///
+    /// Tuple of (u_value, v_value) = (128, 128)
+    pub fn neutral_uv() -> (u8, u8) {
+        (128, 128)
+    }
+
+    /// Test dimensions for packed 4:2:2 formats (UYVY, YUY2).
+    ///
+    /// Returns a vector of (width, height) pairs with even widths
+    /// as required by packed 4:2:2 formats.
+    pub fn packed_422_test_dimensions() -> Vec<(usize, usize)> {
+        vec![
+            (2, 2),   // Minimum size (even width required)
+            (4, 4),   // Small even dimensions
+            (6, 4),   // Even width, even height
+            (8, 6),   // Even dimensions
+            (16, 9),  // Common aspect ratio (even width)
+            (32, 24), // Larger dimensions
+        ]
+    }
+
+    /// Test dimensions for planar 4:2:0 formats (NV12, YV12).
+    ///
+    /// Returns a vector of (width, height) pairs with even widths
+    /// and heights as required by 4:2:0 chroma subsampling.
+    pub fn planar_420_test_dimensions() -> Vec<(usize, usize)> {
+        vec![
+            (2, 2),   // Minimum size for 4:2:0 (must be even)
+            (4, 4),   // Small even dimensions
+            (6, 4),   // Even width, even height
+            (8, 6),   // Even dimensions
+            (16, 8),  // Common aspect ratio with even height
+            (32, 24), // Larger dimensions
+        ]
+    }
 }
 
 /// Generates a single CGA color with alpha from a 6-bit index.
