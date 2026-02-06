@@ -51,13 +51,13 @@ pub fn bgra_to_rgba8(
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_utls::rgba8_colors;
+    use super::super::test_utls::rgb_utils;
     use super::*;
 
     #[test]
     fn test_bgra_to_rgb8() {
         // Get RGBA colors from test utilities
-        let expected_rgba_colors = rgba8_colors();
+        let expected_rgba_colors = rgb_utils::rgba8_colors();
 
         // Convert RGBA to BGRA byte order
         let bgra_colors: Vec<Bgra<u8>> = expected_rgba_colors
@@ -115,7 +115,7 @@ mod tests {
     #[test]
     fn test_bgra_to_rgba8() {
         // Get RGBA colors from test utilities
-        let expected_rgba_colors = rgba8_colors();
+        let expected_rgba_colors = rgb_utils::rgba8_colors();
 
         // Convert RGBA to BGRA byte order
         let bgra_colors: Vec<Bgra<u8>> = expected_rgba_colors
