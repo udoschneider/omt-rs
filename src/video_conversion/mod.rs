@@ -15,17 +15,18 @@ use yuv::{YuvRange, YuvStandardMatrix};
 
 pub use from_bgra::*;
 pub use from_nv12::*;
-pub use from_uyva::*;
 pub use from_uyvy::*;
 pub use from_yuy2::*;
 pub use from_yv12::*;
 
 mod from_bgra;
 mod from_nv12;
-mod from_uyva;
 mod from_uyvy;
 mod from_yuy2;
 mod from_yv12;
+
+#[cfg(test)]
+mod test_utls;
 
 pub fn to_rgb8(frame: &VideoFrame) -> Option<Vec<RGB8>> {
     let width = frame.width() as usize;
@@ -43,7 +44,7 @@ pub fn to_rgb8(frame: &VideoFrame) -> Option<Vec<RGB8>> {
         Codec::NV12 => nv12_to_rgb8(raw_data, width, height, stride, yuv_range, yuv_matrix),
         Codec::YV12 => yv12_to_rgb8(raw_data, width, height, stride, yuv_range, yuv_matrix),
         Codec::BGRA => bgra_to_rgb8(raw_data, width, height, stride),
-        Codec::UYVA => uyva_to_rgb8(raw_data, width, height, stride, yuv_range, yuv_matrix),
+        Codec::UYVA => None,
         Codec::P216 | Codec::PA16 => None,
         Codec::VMX1 | Codec::FPA1 | Codec::Unknown(_) => None,
     }
@@ -65,51 +66,25 @@ pub fn to_rgba8(frame: &VideoFrame) -> Option<Vec<RGBA8>> {
         Codec::NV12 => nv12_to_rgba8(raw_data, width, height, stride, yuv_range, yuv_matrix),
         Codec::YV12 => yv12_to_rgba8(raw_data, width, height, stride, yuv_range, yuv_matrix),
         Codec::BGRA => bgra_to_rgba8(raw_data, width, height, stride),
-        Codec::UYVA => uyva_to_rgba8(raw_data, width, height, stride, yuv_range, yuv_matrix),
+        Codec::UYVA => None,
         Codec::P216 | Codec::PA16 => None,
         Codec::VMX1 | Codec::FPA1 | Codec::Unknown(_) => None,
     }
 }
 
 pub fn to_rgb16(frame: &VideoFrame) -> Option<Vec<RGB16>> {
-    let width = frame.width() as usize;
-    let height = frame.height() as usize;
-    let stride = frame.stride() as usize;
-
-    let raw_data = frame.raw_data()?;
-
-    let yuv_range = get_yuv_range(frame);
-    let yuv_matrix = get_yuv_matrix(frame);
-
     match frame.codec() {
-        Codec::UYVY => uyvy_to_rgb16(raw_data, width, height, stride, yuv_range, yuv_matrix),
-        Codec::YUY2 => yuy2_to_rgb16(raw_data, width, height, stride, yuv_range, yuv_matrix),
-        Codec::NV12 => nv12_to_rgb16(raw_data, width, height, stride, yuv_range, yuv_matrix),
-        Codec::YV12 => yv12_to_rgb16(raw_data, width, height, stride, yuv_range, yuv_matrix),
-        Codec::BGRA => bgra_to_rgb16(raw_data, width, height, stride),
-        Codec::UYVA => uyva_to_rgb16(raw_data, width, height, stride, yuv_range, yuv_matrix),
+        Codec::UYVY | Codec::YUY2 | Codec::NV12 | Codec::YV12 | Codec::BGRA => None,
+        Codec::UYVA => None,
         Codec::P216 | Codec::PA16 => None,
         Codec::VMX1 | Codec::FPA1 | Codec::Unknown(_) => None,
     }
 }
 
 pub fn to_rgba16(frame: &VideoFrame) -> Option<Vec<RGBA16>> {
-    let width = frame.width() as usize;
-    let height = frame.height() as usize;
-    let stride = frame.stride() as usize;
-
-    let raw_data = frame.raw_data()?;
-
-    let yuv_range = get_yuv_range(frame);
-    let yuv_matrix = get_yuv_matrix(frame);
-
     match frame.codec() {
-        Codec::UYVY => uyvy_to_rgba16(raw_data, width, height, stride, yuv_range, yuv_matrix),
-        Codec::YUY2 => yuy2_to_rgba16(raw_data, width, height, stride, yuv_range, yuv_matrix),
-        Codec::NV12 => nv12_to_rgba16(raw_data, width, height, stride, yuv_range, yuv_matrix),
-        Codec::YV12 => yv12_to_rgba16(raw_data, width, height, stride, yuv_range, yuv_matrix),
-        Codec::BGRA => bgra_to_rgba16(raw_data, width, height, stride),
-        Codec::UYVA => uyva_to_rgba16(raw_data, width, height, stride, yuv_range, yuv_matrix),
+        Codec::UYVY | Codec::YUY2 | Codec::NV12 | Codec::YV12 | Codec::BGRA => None,
+        Codec::UYVA => None,
         Codec::P216 | Codec::PA16 => None,
         Codec::VMX1 | Codec::FPA1 | Codec::Unknown(_) => None,
     }

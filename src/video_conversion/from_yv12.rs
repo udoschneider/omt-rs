@@ -85,25 +85,3 @@ pub fn yv12_to_rgba8(
 
     Some(rgba_data)
 }
-
-pub fn yv12_to_rgb16(
-    _raw_data: &[u8],
-    _width: usize,
-    _height: usize,
-    _stride: usize,
-    _yuv_range: YuvRange,
-    _yuv_matrix: YuvStandardMatrix,
-) -> Option<Vec<RGB16>> {
-    None
-}
-
-pub fn yv12_to_rgba16(
-    _raw_data: &[u8],
-    _width: usize,
-    _height: usize,
-    _stride: usize,
-    _yuv_range: YuvRange,
-    _yuv_matrix: YuvStandardMatrix,
-) -> Option<Vec<RGBA16>> {
-    None
-}

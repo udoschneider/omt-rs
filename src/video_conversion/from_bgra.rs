@@ -49,20 +49,129 @@ pub fn bgra_to_rgba8(
     Some(rgba_data)
 }
 
-pub fn bgra_to_rgb16(
-    _raw_data: &[u8],
-    _width: usize,
-    _height: usize,
-    _stride: usize,
-) -> Option<Vec<RGB16>> {
-    None
-}
+#[cfg(test)]
+mod tests {
+    use super::super::test_utls::rgba8_colors;
+    use super::*;
 
-pub fn bgra_to_rgba16(
-    _raw_data: &[u8],
-    _width: usize,
-    _height: usize,
-    _stride: usize,
-) -> Option<Vec<RGBA16>> {
-    None
+    #[test]
+    fn test_bgra_to_rgb8() {
+        // Get RGBA colors from test utilities
+        let expected_rgba_colors = rgba8_colors();
+
+        // Convert RGBA to BGRA byte order
+        let bgra_colors: Vec<Bgra<u8>> = expected_rgba_colors
+            .iter()
+            .map(|c| Bgra::<u8> {
+                r: c.r,
+                g: c.g,
+                b: c.b,
+                a: c.a,
+            })
+            .collect();
+        let bgra_bytes = rgb::bytemuck::cast_slice(&bgra_colors);
+
+        // Create a 8x8 image (64 pixels total from rgba8_colors)
+        let width = 8;
+        let height = 8;
+        let stride = width * 4;
+
+        // Convert BGRA to RGB8
+        let actual_rgb_result = bgra_to_rgb8(&bgra_bytes, width, height, stride);
+        assert!(
+            actual_rgb_result.is_some(),
+            "bgra_to_rgb8 should return Some"
+        );
+
+        let actual_rgb_colors = actual_rgb_result.unwrap();
+
+        // Verify we have the right number of pixels
+        assert_eq!(actual_rgb_colors.len(), expected_rgba_colors.len());
+
+        // Compare RGB values (ignoring alpha)
+        for (i, (a, e)) in actual_rgb_colors
+            .iter()
+            .zip(expected_rgba_colors.iter())
+            .enumerate()
+        {
+            assert_eq!(
+                a.r, e.r,
+                "Red component mismatch at index {}: expected {}, actual {}",
+                i, e.r, a.r
+            );
+            assert_eq!(
+                a.g, e.g,
+                "Green component mismatch at index {}: expected {}, actual {}",
+                i, e.g, a.g
+            );
+            assert_eq!(
+                a.b, e.b,
+                "Blue component mismatch at index {}: expected {}, actual {}",
+                i, e.b, a.b
+            );
+        }
+    }
+
+    #[test]
+    fn test_bgra_to_rgba8() {
+        // Get RGBA colors from test utilities
+        let expected_rgba_colors = rgba8_colors();
+
+        // Convert RGBA to BGRA byte order
+        let bgra_colors: Vec<Bgra<u8>> = expected_rgba_colors
+            .iter()
+            .map(|c| Bgra::<u8> {
+                r: c.r,
+                g: c.g,
+                b: c.b,
+                a: c.a,
+            })
+            .collect();
+        let bgra_bytes = rgb::bytemuck::cast_slice(&bgra_colors);
+
+        // Create a 8x8 image (64 pixels total from rgba8_colors)
+        let width = 8;
+        let height = 8;
+        let stride = width * 4;
+
+        // Convert BGRA to RGBA8
+        let actual_rgba_result = bgra_to_rgba8(&bgra_bytes, width, height, stride);
+        assert!(
+            actual_rgba_result.is_some(),
+            "bgra_to_rgba8 should return Some"
+        );
+
+        let actual_rgba_colors = actual_rgba_result.unwrap();
+
+        // Verify we have the right number of pixels
+        assert_eq!(actual_rgba_colors.len(), expected_rgba_colors.len());
+
+        // Compare all RGBA components (including alpha)
+        for (i, (a, e)) in actual_rgba_colors
+            .iter()
+            .zip(expected_rgba_colors.iter())
+            .enumerate()
+        {
+            assert_eq!(
+                a.r, e.r,
+                "Red component mismatch at index {}: expected {}, actual {}",
+                i, e.r, a.r
+            );
+            assert_eq!(
+                a.g, e.g,
+                "Green component mismatch at index {}: expected {}, actual {}",
+                i, e.g, a.g
+            );
+            assert_eq!(
+                a.b, e.b,
+                "Blue component mismatch at index {}: expected {}, actual {}",
+                i, e.b, a.b
+            );
+            assert_eq!(
+                a.a, e.a,
+                "Alpha component mismatch at index {}: expected {}, actual {}",
+                i, e.a, a.a
+            );
+        }
+    }
 }
