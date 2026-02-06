@@ -51,7 +51,7 @@ pub fn bgra_to_rgba8(
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_utls::rgb_utils;
+    use super::super::test_utils::rgb_utils;
     use super::*;
 
     #[test]

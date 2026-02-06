@@ -78,7 +78,7 @@ pub fn nv12_to_rgba8(
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_utls::yuv_utils;
+    use super::super::test_utils::yuv_utils;
     use super::*;
     use yuv::YuvRange::*;
     use yuv::YuvStandardMatrix::*;

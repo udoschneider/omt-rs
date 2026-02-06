@@ -26,7 +26,7 @@ mod from_yuy2;
 mod from_yv12;
 
 #[cfg(test)]
-mod test_utls;
+mod test_utils;
 
 pub fn to_rgb8(frame: &VideoFrame) -> Option<Vec<RGB8>> {
     let width = frame.width() as usize;
