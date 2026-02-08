@@ -15,12 +15,14 @@ use yuv::{YuvRange, YuvStandardMatrix};
 
 pub use from_bgra::*;
 pub use from_nv12::*;
+pub use from_uyva::*;
 pub use from_uyvy::*;
 pub use from_yuy2::*;
 pub use from_yv12::*;
 
 mod from_bgra;
 mod from_nv12;
+mod from_uyva;
 mod from_uyvy;
 mod from_yuy2;
 mod from_yv12;
@@ -44,7 +46,7 @@ pub fn to_rgb8(frame: &VideoFrame) -> Option<Vec<RGB8>> {
         Codec::NV12 => nv12_to_rgb8(raw_data, width, height, stride, yuv_range, yuv_matrix),
         Codec::YV12 => yv12_to_rgb8(raw_data, width, height, stride, yuv_range, yuv_matrix),
         Codec::BGRA => bgra_to_rgb8(raw_data, width, height, stride),
-        Codec::UYVA => None,
+        Codec::UYVA => uyva_to_rgb8(raw_data, width, height, stride, yuv_range, yuv_matrix),
         Codec::P216 | Codec::PA16 => None,
         Codec::VMX1 | Codec::FPA1 | Codec::Unknown(_) => None,
     }
@@ -66,7 +68,7 @@ pub fn to_rgba8(frame: &VideoFrame) -> Option<Vec<RGBA8>> {
         Codec::NV12 => nv12_to_rgba8(raw_data, width, height, stride, yuv_range, yuv_matrix),
         Codec::YV12 => yv12_to_rgba8(raw_data, width, height, stride, yuv_range, yuv_matrix),
         Codec::BGRA => bgra_to_rgba8(raw_data, width, height, stride),
-        Codec::UYVA => None,
+        Codec::UYVA => uyva_to_rgba8(raw_data, width, height, stride, yuv_range, yuv_matrix),
         Codec::P216 | Codec::PA16 => None,
         Codec::VMX1 | Codec::FPA1 | Codec::Unknown(_) => None,
     }
