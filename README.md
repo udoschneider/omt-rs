@@ -252,7 +252,10 @@ Received frames are exposed through `FrameRef`, `VideoFrame`, and `AudioFrame`.
 - `color_space()`
 - `flags() -> VideoFlags`
 - `raw_data() -> Option<&[u8]>` (uncompressed pixel data)
-- `data(format: VideoDataFormat) -> Option<Vec<u8>>` (converted RGB/RGBA output; note: not all codec/format combinations are implemented)
+- `rgb8_data() -> Option<Vec<u8>>` (8-bit RGB conversion, 3 bytes per pixel)
+- `rgba8_data() -> Option<Vec<u8>>` (8-bit RGBA conversion, 4 bytes per pixel)
+- `rgb16_data() -> Option<Vec<u8>>` (16-bit RGB conversion, 6 bytes per pixel)
+- `rgba16_data() -> Option<Vec<u8>>` (16-bit RGBA conversion, 8 bytes per pixel)
 - `compressed_data() -> Option<&[u8]>` (VMX1 if `ReceiveFlags::INCLUDE_COMPRESSED` or `COMPRESSED_ONLY`)
 - `metadata() -> Option<&[u8]>` (per‑frame metadata payload)
 
@@ -343,17 +346,46 @@ OMT supports multiple pixel formats and alpha channel options. In this wrapper:
 
 ### Codecs (`Codec`)
 
+All codecs listed below are supported by the library:
+
 - `VMX1` — fast compressed video codec.
-- `UYVY`, `YUY2` — 16‑bit YUV packed formats (YUY2 = YUYV order).
+- `UYVY` — 16‑bit YUV packed format (4:2:2).
+- `YUY2` — 16‑bit YUV packed format with YUYV pixel order (4:2:2).
 - `UYVA` — UYVY followed by a full‑resolution alpha plane.
-- `NV12`, `YV12` — planar 4:2:0 YUV formats (NV12 = interleaved UV plane).
-- `BGRA` — 32‑bit RGBA (Win32 ARGB32 layout).
+- `NV12` — planar 4:2:0 YUV format (Y plane followed by interleaved UV plane).
+- `YV12` — planar 4:2:0 YUV format (Y plane followed by separate U and V planes).
+- `BGRA` — 32‑bit RGBA format (Win32 ARGB32 layout).
 - `P216` — planar 4:2:2 YUV with 16‑bit components (Y plane + interleaved UV plane).
 - `PA16` — `P216` plus a 16‑bit alpha plane.
 - `FPA1` — planar 32‑bit float audio.
 - `Unknown(i32)` for non‑standard values.
 
-When receiving uncompressed video, OMT delivers only `UYVY`, `UYVA`, `BGRA`, or `BGRX` (alpha omitted). Other formats may arrive as `VMX1` and can be decoded using `VideoFrame::data(...)`.
+When receiving uncompressed video, OMT delivers only `UYVY`, `UYVA`, `BGRA`, or `BGRX` (alpha omitted). Other formats may arrive as `VMX1` and can be decoded using the conversion methods (`rgb8_data()`, `rgba8_data()`, etc.).
+
+### Format Conversion Support
+
+The `VideoFrame` provides format conversion methods: `rgb8_data()`, `rgba8_data()`, `rgb16_data()`, and `rgba16_data()`. **However, not all codecs support all output formats.** The following table shows which conversions are currently implemented:
+
+| Input Codec | `rgb8_data()` | `rgba8_data()` | `rgb16_data()` | `rgba16_data()` |
+|-------------|---------------|----------------|--------------|-----------------|
+| **UYVY**    | ✅ Yes      | ✅ Yes       | ❌ No        | ❌ No         |
+| **YUY2**    | ✅ Yes      | ✅ Yes       | ❌ No        | ❌ No         |
+| **NV12**    | ✅ Yes      | ✅ Yes       | ❌ No        | ❌ No         |
+| **YV12**    | ✅ Yes      | ✅ Yes       | ❌ No        | ❌ No         |
+| **BGRA**    | ✅ Yes      | ✅ Yes       | ❌ No        | ❌ No         |
+| **UYVA**    | ✅ Yes      | ✅ Yes       | ❌ No        | ❌ No         |
+| **P216**    | ❌ No       | ❌ No        | ✅ Yes       | ✅ Yes        |
+| **PA16**    | ❌ No       | ❌ No        | ✅ Yes       | ✅ Yes        |
+| **VMX1**    | ❌ No       | ❌ No        | ❌ No        | ❌ No         |
+| **FPA1**    | ❌ No       | ❌ No        | ❌ No        | ❌ No         |
+
+**Key points:**
+- **8-bit codecs** (UYVY, YUY2, NV12, YV12, BGRA, UYVA) support conversion via `rgb8_data()` and `rgba8_data()` only.
+- **16-bit codecs** (P216, PA16) support conversion via `rgb16_data()` and `rgba16_data()` only.
+- **Compressed codecs** (VMX1) and **audio codecs** (FPA1) do not support these conversion functions. VMX1 frames must be decoded by OMT first (they will arrive as one of the uncompressed formats above).
+- For unsupported conversions, the conversion methods return `None`.
+- The `UYVA` format supports alpha channel output when using `rgba8_data()`.
+- The `PA16` format supports alpha channel output when using `rgba16_data()`.
 
 ### Preferred receive formats (`PreferredVideoFormat`)
 
@@ -373,22 +405,19 @@ When receiving uncompressed video, OMT delivers only `UYVY`, `UYVA`, `BGRA`, or 
 - `PREVIEW` — sender emitted a 1/8th preview frame.
 - `HIGH_BIT_DEPTH` — set for `P216`/`PA16` sources and for `VMX1` that originated from those formats, so decoders can select the right output format.
 
-### Video data formats (`VideoDataFormat`)
+### Video conversion output formats
 
-- `RGB` (8-bit/component) — **Fully implemented** for common 8-bit codecs
-- `RGBA` (8-bit/component, straight alpha) — **Fully implemented** for common 8-bit codecs. Note: The `PREMULTIPLIED` flag is not currently handled during conversion.
-- `RGB16` (16-bit/component) — **Not yet implemented** (returns `None`)
-- `RGBA16` (16-bit/component, straight alpha) — **Not yet implemented** (returns `None`)
+The conversion methods return pixel data in the following formats:
 
-**Note:** Not all combinations of input codecs, flags, and output formats have been implemented or tested yet. The `VideoFrame::data()` method may return `None` for unsupported conversions, particularly for:
+- `rgb8_data()` — 8-bit RGB (24-bit per pixel, 3 bytes: R, G, B)
+- `rgba8_data()` — 8-bit RGBA (32-bit per pixel, 4 bytes: R, G, B, A with straight alpha)
+- `rgb16_data()` — 16-bit RGB (48-bit per pixel, 6 bytes: R, G, B at 16-bit per component)
+- `rgba16_data()` — 16-bit RGBA (64-bit per pixel, 8 bytes: R, G, B, A at 16-bit per component with straight alpha)
 
-- 16-bit output formats (`RGB16`, `RGBA16`) — not yet implemented
-- 16-bit input formats (`P216`, `PA16`) — limited or no support
-- Alpha channel handling for formats like `UYVA` — basic support only
-- Premultiplied alpha (`PREMULTIPLIED` flag) — not currently handled during conversion
-- Certain codec/flag combinations — may return `None`
-
-For 8-bit formats (`RGB`, `RGBA`), support is available for common codecs: `UYVY`, `YUY2`, `NV12`, `YV12`, `BGRA`. Other codecs may have limited or no conversion support.
+**Important notes:**
+- See the conversion support table above for which codecs support which output formats.
+- The `PREMULTIPLIED` flag is not currently handled during conversion; all alpha is treated as straight alpha.
+- For unsupported codec/format combinations, the conversion methods return `None`.
 
 ---
 
