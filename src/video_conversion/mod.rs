@@ -9,7 +9,7 @@
 //! the reason why the return types all return `RGB8`/`RGBA8`/`RGB16`/`RGBA16` instead of `u8`.
 //! This allows easier iterating/mapping over the results.
 use crate::types::{Codec, ColorSpace, VideoFlags};
-use crate::VideoFrame;
+use crate::MediaFrame;
 use rgb::*;
 use yuv::{YuvRange, YuvStandardMatrix};
 
@@ -32,7 +32,7 @@ mod from_yv12;
 #[cfg(test)]
 mod test_utils;
 
-pub fn to_rgb8(frame: &VideoFrame) -> Option<Vec<RGB8>> {
+pub fn to_rgb8(frame: &MediaFrame) -> Option<Vec<RGB8>> {
     let width = frame.width() as usize;
     let height = frame.height() as usize;
     let stride = frame.stride() as usize;
@@ -54,7 +54,7 @@ pub fn to_rgb8(frame: &VideoFrame) -> Option<Vec<RGB8>> {
     }
 }
 
-pub fn to_rgba8(frame: &VideoFrame) -> Option<Vec<RGBA8>> {
+pub fn to_rgba8(frame: &MediaFrame) -> Option<Vec<RGBA8>> {
     let width = frame.width() as usize;
     let height = frame.height() as usize;
     let stride = frame.stride() as usize;
@@ -76,7 +76,7 @@ pub fn to_rgba8(frame: &VideoFrame) -> Option<Vec<RGBA8>> {
     }
 }
 
-pub fn to_rgb16(frame: &VideoFrame) -> Option<Vec<RGB16>> {
+pub fn to_rgb16(frame: &MediaFrame) -> Option<Vec<RGB16>> {
     let width = frame.width() as usize;
     let height = frame.height() as usize;
     let stride = frame.stride() as usize;
@@ -95,7 +95,7 @@ pub fn to_rgb16(frame: &VideoFrame) -> Option<Vec<RGB16>> {
     }
 }
 
-pub fn to_rgba16(frame: &VideoFrame) -> Option<Vec<RGBA16>> {
+pub fn to_rgba16(frame: &MediaFrame) -> Option<Vec<RGBA16>> {
     let width = frame.width() as usize;
     let height = frame.height() as usize;
     let stride = frame.stride() as usize;
@@ -114,7 +114,7 @@ pub fn to_rgba16(frame: &VideoFrame) -> Option<Vec<RGBA16>> {
     }
 }
 
-pub fn get_yuv_matrix(frame: &VideoFrame) -> YuvStandardMatrix {
+pub fn get_yuv_matrix(frame: &MediaFrame) -> YuvStandardMatrix {
     match frame.color_space() {
         ColorSpace::BT709 => YuvStandardMatrix::Bt709,
         ColorSpace::BT601 => YuvStandardMatrix::Bt601,
@@ -128,7 +128,7 @@ pub fn get_yuv_matrix(frame: &VideoFrame) -> YuvStandardMatrix {
     }
 }
 
-pub fn get_yuv_range(frame: &VideoFrame) -> YuvRange {
+pub fn get_yuv_range(frame: &MediaFrame) -> YuvRange {
     if frame.flags().contains(VideoFlags::HIGH_BIT_DEPTH) {
         YuvRange::Full
     } else {

@@ -54,24 +54,20 @@ fn main() {
         // Fetch a single sample frame.
         match receiver.receive(FrameType::Video, Timeout::from_millis(1000)) {
             Ok(Some(frame)) => {
-                if let Some(video) = frame.video() {
-                    let codec = fourcc_to_string(frame.codec().fourcc());
-                    let flags = describe_video_flags(video.flags());
-                    let (fr_n, fr_d) = video.frame_rate();
+                let codec = fourcc_to_string(frame.codec().fourcc());
+                let flags = describe_video_flags(frame.flags());
+                let (fr_n, fr_d) = frame.frame_rate();
 
-                    info!(
-                        "  -> Video: {}x{} @ {}/{} fps, codec {}, flags [{}], colorspace {:?}",
-                        video.width(),
-                        video.height(),
-                        fr_n,
-                        fr_d,
-                        codec,
-                        flags,
-                        video.color_space()
-                    );
-                } else {
-                    info!("  -> No video frame received (non-video).");
-                }
+                info!(
+                    "  -> Video: {}x{} @ {}/{} fps, codec {}, flags [{}], colorspace {:?}",
+                    frame.width(),
+                    frame.height(),
+                    fr_n,
+                    fr_d,
+                    codec,
+                    flags,
+                    frame.color_space()
+                );
             }
             Ok(None) => {
                 info!("  -> No video frame received (timeout).");

@@ -10,14 +10,18 @@
 //! of `-1` tells the sender to generate timestamps and pace delivery by the
 //! frame or sample rate.
 //!
-//! Metadata frames and per-frame metadata payloads are UTF-8 XML strings with a
-//! terminating null; lengths include the null byte.
+//! Metadata frames and per-frame metadata payloads are UTF-8 XML strings.
+//!
+//! **Important:** Although `libomt.h` explicitly states that metadata strings must
+//! *include* the null terminator, this high-level Rust wrapper handles this automatically.
+//! Functions accepting metadata strings ensure that the passed string does *not* include
+//! a null character and add it behind the scenes. The length passed to the C API includes
+//! the null byte, but Rust users should provide normal Rust strings without null terminators.
 //!
 //! For protocol context, see: <https://github.com/openmediatransport>
 
 use crate::ffi;
-pub use crate::receiver::AudioFrame;
-pub use crate::video_frame::VideoFrame;
+pub use crate::media_frame::MediaFrame;
 use bitflags::bitflags;
 use std::time::Duration;
 
@@ -246,57 +250,5 @@ impl From<ffi::OMTReceiveFlags> for ReceiveFlags {
 impl From<ReceiveFlags> for i32 {
     fn from(value: ReceiveFlags) -> Self {
         value.bits()
-    }
-}
-
-/// Borrowed view of a received media frame.
-///
-/// Valid only until the next receive call on the same receiver/sender.
-pub struct FrameRef<'a> {
-    raw: &'a ffi::OMTMediaFrame,
-}
-
-impl<'a> FrameRef<'a> {
-    pub(crate) fn new(raw: &'a ffi::OMTMediaFrame) -> Self {
-        Self { raw }
-    }
-
-    /// Returns the OMT frame type (video/audio/metadata).
-    pub fn frame_type(&self) -> FrameType {
-        self.raw.Type.into()
-    }
-
-    /// Returns the frame timestamp in OMT ticks (10,000,000 per second).
-    pub fn timestamp(&self) -> i64 {
-        self.raw.Timestamp
-    }
-
-    pub fn codec(&self) -> Codec {
-        self.raw.Codec.into()
-    }
-
-    pub fn video(&self) -> Option<VideoFrame<'a>> {
-        if self.frame_type() != FrameType::Video {
-            return None;
-        }
-        Some(VideoFrame::new(self.raw))
-    }
-
-    pub fn audio(&self) -> Option<AudioFrame<'a>> {
-        if self.frame_type() != FrameType::Audio {
-            return None;
-        }
-        Some(AudioFrame::new(self.raw))
-    }
-
-    pub fn metadata(&self) -> Option<&'a [u8]> {
-        if self.frame_type() != FrameType::Metadata {
-            return None;
-        }
-        if self.raw.Data.is_null() || self.raw.DataLength <= 0 {
-            return None;
-        }
-        let len = self.raw.DataLength as usize;
-        Some(unsafe { std::slice::from_raw_parts(self.raw.Data as *const u8, len) })
     }
 }

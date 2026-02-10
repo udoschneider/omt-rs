@@ -7,90 +7,11 @@
 
 use crate::ffi;
 use crate::ffi_utils::c_char_array_to_string;
-use crate::types::{
-    Address, FrameRef, FrameType, PreferredVideoFormat, Quality, ReceiveFlags, Timeout,
-};
+use crate::media_frame::MediaFrame;
+use crate::types::{Address, FrameType, PreferredVideoFormat, Quality, ReceiveFlags, Timeout};
 use crate::OmtError;
 use std::ffi::CString;
 use std::ptr::NonNull;
-
-/// Audio-specific accessors for a received media frame.
-pub struct AudioFrame<'a> {
-    raw: &'a ffi::OMTMediaFrame,
-}
-
-impl<'a> AudioFrame<'a> {
-    pub(crate) fn new(raw: &'a ffi::OMTMediaFrame) -> Self {
-        Self { raw }
-    }
-
-    pub fn sample_rate(&self) -> i32 {
-        self.raw.SampleRate
-    }
-
-    pub fn channels(&self) -> i32 {
-        self.raw.Channels
-    }
-
-    pub fn samples_per_channel(&self) -> i32 {
-        self.raw.SamplesPerChannel
-    }
-
-    pub fn raw_data(&self) -> Option<&'a [u8]> {
-        if self.raw.Data.is_null() || self.raw.DataLength <= 0 {
-            return None;
-        }
-        let len = self.raw.DataLength as usize;
-        Some(unsafe { std::slice::from_raw_parts(self.raw.Data as *const u8, len) })
-    }
-
-    pub fn data(&self) -> Option<Vec<Vec<f32>>> {
-        let data = self.raw_data()?;
-        let channels = self.channels();
-        let samples_per_channel = self.samples_per_channel();
-
-        if channels <= 0 || samples_per_channel <= 0 {
-            return None;
-        }
-
-        let channels = channels as usize;
-        let samples_per_channel = samples_per_channel as usize;
-        let total_samples = channels.checked_mul(samples_per_channel)?;
-        let expected_len = total_samples.checked_mul(4)?;
-        if data.len() != expected_len {
-            return None;
-        }
-
-        let mut out = vec![vec![0f32; samples_per_channel]; channels];
-
-        for (ch, channel_data) in out.iter_mut().enumerate() {
-            let plane_base = ch * samples_per_channel * 4;
-            for (sample_idx, sample) in channel_data.iter_mut().enumerate() {
-                let i = plane_base + sample_idx * 4;
-                let bytes = [data[i], data[i + 1], data[i + 2], data[i + 3]];
-                *sample = f32::from_le_bytes(bytes);
-            }
-        }
-
-        Some(out)
-    }
-
-    pub fn compressed_data(&self) -> Option<&'a [u8]> {
-        if self.raw.CompressedData.is_null() || self.raw.CompressedLength <= 0 {
-            return None;
-        }
-        let len = self.raw.CompressedLength as usize;
-        Some(unsafe { std::slice::from_raw_parts(self.raw.CompressedData as *const u8, len) })
-    }
-
-    pub fn metadata(&self) -> Option<&'a [u8]> {
-        if self.raw.FrameMetadata.is_null() || self.raw.FrameMetadataLength <= 0 {
-            return None;
-        }
-        let len = self.raw.FrameMetadataLength as usize;
-        Some(unsafe { std::slice::from_raw_parts(self.raw.FrameMetadata as *const u8, len) })
-    }
-}
 
 #[derive(Clone, Debug, Default)]
 /// On-air tally state reported by the sender (preview/program).
@@ -108,6 +29,31 @@ pub struct SenderInfo {
     pub reserved1: String,
     pub reserved2: String,
     pub reserved3: String,
+}
+
+impl SenderInfo {
+    /// Converts this `SenderInfo` to the FFI representation.
+    pub(crate) fn to_ffi(&self) -> ffi::OMTSenderInfo {
+        use crate::ffi_utils::write_c_char_array;
+
+        let mut raw = ffi::OMTSenderInfo {
+            ProductName: [0; ffi::OMT_MAX_STRING_LENGTH],
+            Manufacturer: [0; ffi::OMT_MAX_STRING_LENGTH],
+            Version: [0; ffi::OMT_MAX_STRING_LENGTH],
+            Reserved1: [0; ffi::OMT_MAX_STRING_LENGTH],
+            Reserved2: [0; ffi::OMT_MAX_STRING_LENGTH],
+            Reserved3: [0; ffi::OMT_MAX_STRING_LENGTH],
+        };
+
+        write_c_char_array(&mut raw.ProductName, &self.product_name);
+        write_c_char_array(&mut raw.Manufacturer, &self.manufacturer);
+        write_c_char_array(&mut raw.Version, &self.version);
+        write_c_char_array(&mut raw.Reserved1, &self.reserved1);
+        write_c_char_array(&mut raw.Reserved2, &self.reserved2);
+        write_c_char_array(&mut raw.Reserved3, &self.reserved3);
+
+        raw
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -210,11 +156,45 @@ impl Receiver {
     /// (matching the `libomt.h` lifetime rules for `omt_receive`). Timestamps are
     /// in OMT ticks (10,000,000 per second). Metadata frames carry UTF-8 XML with
     /// a terminating null byte.
+    ///
+    /// # Examples
+    ///
+    /// ## Receive video frames
+    ///
+    /// ```no_run
+    /// use omt::{Receiver, Address, FrameType, PreferredVideoFormat, ReceiveFlags, Timeout};
+    ///
+    /// let address = Address::new("HOST (Sender Name)");
+    /// let mut receiver = Receiver::create(
+    ///     &address,
+    ///     FrameType::Video,
+    ///     PreferredVideoFormat::UYVYorBGRA,
+    ///     ReceiveFlags::NONE,
+    /// ).unwrap();
+    ///
+    /// if let Ok(Some(frame)) = receiver.receive(FrameType::Video, Timeout::from_millis(1000)) {
+    ///     println!("Received {}x{} frame", frame.width(), frame.height());
+    /// }
+    /// ```
+    ///
+    /// ## Receive metadata frames
+    ///
+    /// ```no_run
+    /// use omt::{Receiver, Address, FrameType, PreferredVideoFormat, ReceiveFlags, Timeout};
+    ///
+    /// # let address = Address::new("HOST (Sender Name)");
+    /// # let mut receiver = Receiver::create(&address, FrameType::Video, PreferredVideoFormat::UYVYorBGRA, ReceiveFlags::NONE).unwrap();
+    /// if let Ok(Some(frame)) = receiver.receive(FrameType::Metadata, Timeout::from_millis(100)) {
+    ///     if let Some(metadata) = frame.xml_data() {
+    ///         println!("Received metadata: {}", metadata);
+    ///     }
+    /// }
+    /// ```
     pub fn receive(
         &mut self,
         frame_types: FrameType,
         timeout: Timeout,
-    ) -> Result<Option<FrameRef<'_>>, OmtError> {
+    ) -> Result<Option<MediaFrame<'_>>, OmtError> {
         let frame_ptr = unsafe {
             ffi::omt_receive(
                 self.handle.as_ptr(),
@@ -225,23 +205,60 @@ impl Receiver {
         if frame_ptr.is_null() {
             Ok(None)
         } else {
-            Ok(Some(FrameRef::new(unsafe { &*frame_ptr })))
+            Ok(Some(MediaFrame::new(unsafe { &*frame_ptr })))
         }
     }
 
-    /// Sends XML metadata back to the sender (bi-directional metadata channel).
+    /// Sends a metadata frame back to the sender (bi-directional metadata channel).
     ///
-    /// Metadata must be UTF-8 XML with a terminating null byte (length includes
-    /// the null). Timestamps use the OMT timebase (10,000,000 ticks per second).
-    pub fn send_metadata_xml(&self, xml: &str, timestamp: i64) -> Result<i32, OmtError> {
-        let c_xml = CString::new(xml).map_err(|_| OmtError::InvalidCString)?;
-        let mut frame: ffi::OMTMediaFrame = unsafe { std::mem::zeroed() };
-        frame.Type = ffi::OMTFrameType::Metadata;
-        frame.Timestamp = timestamp;
-        frame.Data = c_xml.as_ptr() as *mut _;
-        frame.DataLength = c_xml.as_bytes_with_nul().len() as i32;
+    /// The frame should be a metadata frame created with `MediaFrame::metadata()`.
+    /// If a non-metadata frame is passed, a warning will be logged and the frame
+    /// type will be used as-is.
+    ///
+    /// # Examples
+    ///
+    /// ## Send simple metadata
+    ///
+    /// ```no_run
+    /// use omt::{Receiver, Address, FrameType, PreferredVideoFormat, ReceiveFlags, MediaFrame};
+    ///
+    /// let address = Address::new("HOST (Sender Name)");
+    /// let receiver = Receiver::create(
+    ///     &address,
+    ///     FrameType::Video,
+    ///     PreferredVideoFormat::UYVYorBGRA,
+    ///     ReceiveFlags::NONE,
+    /// ).unwrap();
+    ///
+    /// let mut metadata = MediaFrame::metadata("<status>ready</status>", -1).unwrap();
+    /// receiver.send_metadata(&mut metadata).unwrap();
+    /// ```
+    ///
+    /// ## Send PTZ command
+    ///
+    /// ```no_run
+    /// use omt::{Receiver, Address, FrameType, PreferredVideoFormat, ReceiveFlags, MediaFrame};
+    ///
+    /// # let address = Address::new("HOST (Sender Name)");
+    /// # let receiver = Receiver::create(&address, FrameType::Video, PreferredVideoFormat::UYVYorBGRA, ReceiveFlags::NONE).unwrap();
+    /// // Send PTZ VISCA command to sender
+    /// let mut ptz_cmd = MediaFrame::metadata(
+    ///     r#"<OMTPTZ Protocol="VISCA" Sequence="22" Command="8101040700FF" />"#,
+    ///     -1
+    /// ).unwrap();
+    /// receiver.send_metadata(&mut ptz_cmd).unwrap();
+    /// ```
+    pub fn send_metadata(&self, frame: &mut MediaFrame) -> Result<i32, OmtError> {
+        // Check if frame is a metadata frame and log warning if not
+        let frame_ref = frame.as_mut();
+        if frame_ref.Type != ffi::OMTFrameType::Metadata {
+            log::warn!(
+                "Receiver::send_metadata called with non-metadata frame type: {:?}. Expected OMTFrameType::Metadata.",
+                frame_ref.Type
+            );
+        }
 
-        let result = unsafe { ffi::omt_receive_send(self.handle.as_ptr(), &mut frame) };
+        let result = unsafe { ffi::omt_receive_send(self.handle.as_ptr(), frame_ref) };
         Ok(result as i32)
     }
 
@@ -279,6 +296,31 @@ impl Receiver {
     }
 
     /// Fetches optional metadata about the connected sender.
+    ///
+    /// Returns sender device/software information if available, including product name,
+    /// manufacturer, and version.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::{Receiver, Address, FrameType, PreferredVideoFormat, ReceiveFlags};
+    ///
+    /// let address = Address::new("HOST (Sender Name)");
+    /// let receiver = Receiver::create(
+    ///     &address,
+    ///     FrameType::Video,
+    ///     PreferredVideoFormat::UYVYorBGRA,
+    ///     ReceiveFlags::NONE,
+    /// ).unwrap();
+    ///
+    /// if let Some(info) = receiver.get_sender_info() {
+    ///     println!("Connected to: {} {} v{}",
+    ///         info.manufacturer,
+    ///         info.product_name,
+    ///         info.version
+    ///     );
+    /// }
+    /// ```
     pub fn get_sender_info(&self) -> Option<SenderInfo> {
         let mut info = ffi::OMTSenderInfo {
             ProductName: [0; ffi::OMT_MAX_STRING_LENGTH],
@@ -310,5 +352,75 @@ impl Receiver {
 impl Drop for Receiver {
     fn drop(&mut self) {
         unsafe { ffi::omt_receive_destroy(self.handle.as_ptr()) };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{Codec, ColorSpace, VideoFlags};
+
+    #[test]
+    fn test_send_metadata_with_metadata_frame() {
+        // Create a receiver (this will fail if no sender is available, but we're just testing the API)
+        let address = Address::new("HOST (Test Sender)");
+        let receiver = Receiver::create(
+            &address,
+            FrameType::Video,
+            PreferredVideoFormat::UYVYorBGRA,
+            ReceiveFlags::NONE,
+        );
+
+        // Skip if receiver creation fails (no sender available)
+        if receiver.is_err() {
+            return;
+        }
+
+        let receiver = receiver.unwrap();
+
+        // Create a metadata frame
+        let mut metadata = MediaFrame::metadata("<test>data</test>", -1).unwrap();
+
+        // This should work without warnings (though it may fail if no sender is connected)
+        let _ = receiver.send_metadata(&mut metadata);
+    }
+
+    #[test]
+    fn test_send_metadata_with_video_frame_logs_warning() {
+        // Create a receiver
+        let address = Address::new("HOST (Test Sender)");
+        let receiver = Receiver::create(
+            &address,
+            FrameType::Video,
+            PreferredVideoFormat::UYVYorBGRA,
+            ReceiveFlags::NONE,
+        );
+
+        // Skip if receiver creation fails (no sender available)
+        if receiver.is_err() {
+            return;
+        }
+
+        let receiver = receiver.unwrap();
+
+        // Create a video frame (not a metadata frame)
+        let mut video_frame = MediaFrame::video(
+            Codec::BGRA,
+            640,
+            480,
+            640 * 4,
+            VideoFlags::NONE,
+            30,
+            1,
+            1.33333,
+            ColorSpace::BT601,
+            -1,
+            vec![0u8; 640 * 480 * 4],
+        );
+
+        // This should log a warning but not fail
+        // (The actual send may fail if no sender is connected, but that's okay for this test)
+        let _ = receiver.send_metadata(&mut video_frame);
+        // The warning will be logged but we can't easily assert on log output in this test
     }
 }

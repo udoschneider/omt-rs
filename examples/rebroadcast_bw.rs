@@ -2,7 +2,7 @@ use clap::Parser;
 use log::{error, info};
 use omt::{
     helpers::{discover_first_sender, discover_matching_sender},
-    Address, Codec, ColorSpace, FrameType, Name, OutgoingFrame, PreferredVideoFormat, Quality,
+    Address, Codec, ColorSpace, FrameType, MediaFrame, Name, PreferredVideoFormat, Quality,
     ReceiveFlags, Receiver, Sender, Timeout, VideoFlags,
 };
 
@@ -84,40 +84,38 @@ fn main() {
 
     loop {
         match receiver.receive(FrameType::Video, Timeout::from_millis(1000)) {
-            Ok(Some(frame_ref)) => {
-                if let Some(video) = frame_ref.video() {
-                    let timestamp = frame_ref.timestamp();
-                    let (fr_n, fr_d) = video.frame_rate();
-                    let aspect_ratio = video.aspect_ratio();
-                    let color_space = video.color_space();
-                    let flags = video.flags();
+            Ok(Some(frame)) => {
+                let timestamp = frame.timestamp();
+                let (fr_n, fr_d) = frame.frame_rate();
+                let aspect_ratio = frame.aspect_ratio();
+                let color_space = frame.color_space();
+                let flags = frame.flags();
 
-                    let width = video.width();
-                    let height = video.height();
+                let width = frame.width();
+                let height = frame.height();
 
-                    let data = match video.rgb8_data() {
-                        Some(d) => d,
-                        None => {
-                            std::thread::sleep(Duration::from_millis(10));
-                            continue;
-                        }
-                    };
-
-                    let outgoing = bw_from_rgb(
-                        &data,
-                        width,
-                        height,
-                        flags,
-                        fr_n,
-                        fr_d,
-                        aspect_ratio,
-                        color_space,
-                        timestamp,
-                    );
-
-                    if let Some(mut out) = outgoing {
-                        let _ = sender.send(&mut out);
+                let data = match frame.rgb8_data() {
+                    Some(d) => d,
+                    None => {
+                        std::thread::sleep(Duration::from_millis(10));
+                        continue;
                     }
+                };
+
+                let outgoing = bw_from_rgb(
+                    &data,
+                    width,
+                    height,
+                    flags,
+                    fr_n,
+                    fr_d,
+                    aspect_ratio,
+                    color_space,
+                    timestamp,
+                );
+
+                if let Some(mut out) = outgoing {
+                    let _ = sender.send(&mut out);
                 }
             }
             Ok(None) => {
@@ -152,7 +150,7 @@ fn bw_from_rgb(
     aspect_ratio: f32,
     color_space: ColorSpace,
     timestamp: i64,
-) -> Option<OutgoingFrame> {
+) -> Option<MediaFrame<'_>> {
     let width = width as usize;
     let height = height as usize;
 
@@ -186,7 +184,7 @@ fn bw_from_rgb(
         }
     }
 
-    Some(OutgoingFrame::video(
+    Some(MediaFrame::video(
         Codec::BGRA,
         width as i32,
         height as i32,

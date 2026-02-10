@@ -1,5 +1,101 @@
-use crate::{Address, Discovery, Timeout};
+use crate::{Address, Discovery, OmtError, Timeout};
 use std::env;
+
+/// Strips trailing null terminators from a byte slice and converts to a string.
+///
+/// This is used when reading metadata from the C API, which includes
+/// null terminators in the length, but Rust strings should not include them.
+///
+/// Handles edge cases:
+/// - Multiple trailing null bytes (strips all of them)
+/// - Empty slices (returns empty string)
+/// - Only null bytes (returns empty string)
+/// - Embedded null bytes (preserved in the output)
+/// - Invalid UTF-8 (returns error)
+///
+/// # Panics
+///
+/// Panics if the input contains invalid UTF-8.
+///
+/// # Examples
+///
+/// ```
+/// use omt::helpers::without_null_terminator;
+///
+/// let with_null = b"<test>data</test>\0";
+/// let stripped = without_null_terminator(with_null);
+/// assert_eq!(stripped, "<test>data</test>");
+///
+/// let without_null = b"<test>data</test>";
+/// let unchanged = without_null_terminator(without_null);
+/// assert_eq!(unchanged, "<test>data</test>");
+///
+/// // Multiple trailing null bytes are all stripped
+/// let multiple_nulls = b"data\0\0\0";
+/// let stripped = without_null_terminator(multiple_nulls);
+/// assert_eq!(stripped, "data");
+///
+/// // Empty slice
+/// let empty = b"";
+/// let result = without_null_terminator(empty);
+/// assert_eq!(result, "");
+///
+/// // Only null bytes
+/// let only_nulls = b"\0\0\0";
+/// let result = without_null_terminator(only_nulls);
+/// assert_eq!(result, "");
+///
+/// // Embedded nulls are preserved
+/// let embedded = b"data\0middle\0";
+/// let result = without_null_terminator(embedded);
+/// assert_eq!(result, "data\0middle");
+/// ```
+pub fn without_null_terminator(slice: &[u8]) -> &str {
+    // Find the last non-null byte position
+    let end = slice
+        .iter()
+        .rposition(|&b| b != 0)
+        .map(|pos| pos + 1)
+        .unwrap_or(0);
+
+    // Convert the non-trailing-null portion to a string
+    // This will panic if the input contains invalid UTF-8, which is acceptable
+    // since the C API should only return valid UTF-8 strings
+    std::str::from_utf8(&slice[..end]).expect("C API returned invalid UTF-8 string")
+}
+
+/// Creates a null-terminated byte vector from a string.
+///
+/// Validates that the string does not contain any null bytes (which would
+/// interfere with C string handling), then creates a vector with the string
+/// bytes followed by a null terminator.
+///
+/// # Errors
+///
+/// Returns `OmtError::InvalidCString` if the input string contains any null bytes.
+///
+/// # Examples
+///
+/// ```
+/// use omt::helpers::null_terminated_bytes;
+///
+/// let result = null_terminated_bytes("<test>data</test>").unwrap();
+/// assert_eq!(result, b"<test>data</test>\0");
+/// assert_eq!(result.len(), 18); // 17 chars + 1 null
+///
+/// // String with null byte fails
+/// let result = null_terminated_bytes("test\0data");
+/// assert!(result.is_err());
+/// ```
+pub fn null_terminated_bytes<S: AsRef<str>>(s: S) -> Result<Vec<u8>, OmtError> {
+    let s = s.as_ref();
+    if s.contains('\0') {
+        return Err(OmtError::InvalidCString);
+    }
+    let mut bytes = s.as_bytes().to_vec();
+    bytes.push(0);
+    Ok(bytes)
+}
 
 /// Discover OMT sender addresses with configurable backoff.
 ///

@@ -1,8 +1,8 @@
 mod ffi;
 mod ffi_utils;
 
+mod media_frame;
 mod video_conversion;
-mod video_frame;
 
 pub mod discovery;
 pub mod helpers;
@@ -14,8 +14,8 @@ pub mod types;
 use std::fmt;
 
 pub use discovery::Discovery;
-pub use receiver::{AudioFrame, Receiver, SenderInfo, Statistics, Tally};
-pub use sender::{OutgoingFrame, Sender};
+pub use receiver::{Receiver, SenderInfo, Statistics, Tally};
+pub use sender::Sender;
 pub use settings::{
     get_discovery_server, get_network_port_end, get_network_port_range, get_network_port_start,
     set_discovery_server, set_logging_filename, set_network_port_end, set_network_port_range,
@@ -23,8 +23,8 @@ pub use settings::{
     settings_set_string,
 };
 pub use types::{
-    Address, Codec, ColorSpace, FrameRef, FrameType, Name, PreferredVideoFormat, Quality,
-    ReceiveFlags, Timeout, VideoFlags, VideoFrame,
+    Address, Codec, ColorSpace, FrameType, MediaFrame, Name, PreferredVideoFormat, Quality,
+    ReceiveFlags, Timeout, VideoFlags,
 };
 
 #[derive(Debug)]

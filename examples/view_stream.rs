@@ -2,7 +2,7 @@ use clap::Parser;
 use log::{error, info};
 use omt::{
     helpers::{discover_first_sender, discover_matching_sender},
-    Address, FrameRef, FrameType, PreferredVideoFormat, ReceiveFlags, Receiver, Timeout,
+    Address, FrameType, MediaFrame, PreferredVideoFormat, ReceiveFlags, Receiver, Timeout,
 };
 use std::env;
 use std::time::{Duration, Instant};
@@ -100,14 +100,12 @@ fn main() {
     }
 }
 
-fn frame_to_image(frame: &FrameRef) -> Option<image::DynamicImage> {
-    let video = frame.video()?;
+fn frame_to_image(frame: &MediaFrame) -> Option<image::DynamicImage> {
+    // Use MediaFrame.rgb8_data() API to convert to RGB format
+    let rgb_data = frame.rgb8_data()?;
 
-    // Use VideoFrame.rgb8_data() API to convert to RGB format
-    let rgb_data = video.rgb8_data()?;
-
-    let width = video.width() as u32;
-    let height = video.height() as u32;
+    let width = frame.width() as u32;
+    let height = frame.height() as u32;
 
     // RGB data should be 3 bytes per pixel
     if rgb_data.len() < (width * height * 3) as usize {

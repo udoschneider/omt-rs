@@ -1,7 +1,5 @@
 use log::{error, info};
-use omt::{
-    Codec, ColorSpace, Name, OutgoingFrame, Quality, Sender, SenderInfo, Timeout, VideoFlags,
-};
+use omt::{Codec, ColorSpace, MediaFrame, Name, Quality, Sender, SenderInfo, Timeout, VideoFlags};
 use std::env;
 use std::f32::consts::TAU;
 use std::path::Path;
@@ -29,7 +27,7 @@ fn main() {
 
     let (width, height, data) = load_burosch_bgra();
 
-    let mut frame = OutgoingFrame::video(
+    let mut frame = MediaFrame::video(
         Codec::BGRA,
         width,
         height,
@@ -67,7 +65,7 @@ fn main() {
             audio_frequency_hz,
             &mut audio_phase,
         );
-        let mut audio_frame = OutgoingFrame::audio(
+        let mut audio_frame = MediaFrame::audio(
             Codec::FPA1,
             audio_sample_rate,
             audio_channels,
@@ -81,14 +79,12 @@ fn main() {
 
         loop {
             match sender.receive_metadata(Timeout::from_millis(0)) {
-                Ok(Some(frame_ref)) => {
-                    if let Some(payload) = frame_ref.metadata() {
-                        let text = String::from_utf8_lossy(payload);
-                        let text = text.trim_matches('\0');
-                        if text.is_empty() {
+                Ok(Some(frame)) => {
+                    if let Some(payload) = frame.xml_data() {
+                        if payload.is_empty() {
                             info!("Metadata: <empty>");
                         } else {
-                            info!("Metadata: {}", text);
+                            info!("Metadata: {}", payload);
                         }
                     } else {
                         info!("Metadata frame with no payload");

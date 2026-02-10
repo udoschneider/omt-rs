@@ -248,6 +248,34 @@ impl Codec {
             Codec::Unknown(v) => v as u32,
         }
     }
+
+    /// Converts this codec to the FFI `OMTCodec` representation.
+    ///
+    /// This is used internally when constructing frames to pass to the C API.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use omt::Codec;
+    ///
+    /// let codec = Codec::BGRA;
+    /// // The to_ffi() method is used internally when creating frames
+    /// ```
+    pub(crate) fn to_ffi(self) -> ffi::OMTCodec {
+        match self {
+            Codec::VMX1 => ffi::OMTCodec::VMX1,
+            Codec::FPA1 => ffi::OMTCodec::FPA1,
+            Codec::UYVY => ffi::OMTCodec::UYVY,
+            Codec::YUY2 => ffi::OMTCodec::YUY2,
+            Codec::BGRA => ffi::OMTCodec::BGRA,
+            Codec::NV12 => ffi::OMTCodec::NV12,
+            Codec::YV12 => ffi::OMTCodec::YV12,
+            Codec::UYVA => ffi::OMTCodec::UYVA,
+            Codec::P216 => ffi::OMTCodec::P216,
+            Codec::PA16 => ffi::OMTCodec::PA16,
+            Codec::Unknown(_) => ffi::OMTCodec::VMX1,
+        }
+    }
 }
 
 #[cfg(test)]

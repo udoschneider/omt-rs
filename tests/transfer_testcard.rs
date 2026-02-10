@@ -1,6 +1,6 @@
 use omt::{
-    Address, Codec, ColorSpace, FrameRef, FrameType, Name, OutgoingFrame, PreferredVideoFormat,
-    Quality, ReceiveFlags, Receiver, Sender, Timeout, VideoFlags,
+    Address, Codec, ColorSpace, FrameType, MediaFrame, Name, PreferredVideoFormat, Quality,
+    ReceiveFlags, Receiver, Sender, Timeout, VideoFlags,
 };
 use std::collections::HashSet;
 use std::path::Path;
@@ -25,7 +25,7 @@ fn sender_receiver_transfers_testcard() {
 
     let (width, height, data, samples) = load_burosch_bgra();
 
-    let mut frame = OutgoingFrame::video(
+    let mut frame = MediaFrame::video(
         Codec::BGRA,
         width,
         height,
@@ -166,13 +166,8 @@ fn select_distinct_samples(image: &image::RgbImage, count: usize) -> Vec<SampleP
     samples
 }
 
-fn verify_burosch(frame: &FrameRef, width: i32, height: i32, samples: &[SamplePoint]) -> bool {
-    let video = match frame.video() {
-        Some(v) => v,
-        None => return false,
-    };
-
-    if video.width() != width || video.height() != height {
+fn verify_burosch(frame: &MediaFrame, width: i32, height: i32, samples: &[SamplePoint]) -> bool {
+    if frame.width() != width || frame.height() != height {
         return false;
     }
 
@@ -180,7 +175,7 @@ fn verify_burosch(frame: &FrameRef, width: i32, height: i32, samples: &[SamplePo
         return false;
     }
 
-    let data = match video.raw_data() {
+    let data = match frame.raw_data() {
         Some(d) => d,
         None => return false,
     };
@@ -189,7 +184,7 @@ fn verify_burosch(frame: &FrameRef, width: i32, height: i32, samples: &[SamplePo
 
     match frame.codec() {
         Codec::BGRA => {
-            let stride = video.stride() as usize;
+            let stride = frame.stride() as usize;
             for sample in samples {
                 let expected = sample.expected;
                 let actual = match bgra_pixel(data, stride, sample.x as usize, sample.y as usize) {
@@ -203,7 +198,7 @@ fn verify_burosch(frame: &FrameRef, width: i32, height: i32, samples: &[SamplePo
             true
         }
         Codec::UYVY => {
-            let stride = video.stride() as usize;
+            let stride = frame.stride() as usize;
             for sample in samples {
                 let expected = sample.expected;
                 let actual =
@@ -267,68 +262,58 @@ fn clamp_u8(val: i32) -> u8 {
 }
 
 fn log_frame_summary(
-    frame: &FrameRef,
+    frame: &MediaFrame,
     expected_width: i32,
     expected_height: i32,
     samples: &[SamplePoint],
 ) {
-    if let Some(video) = frame.video() {
-        println!(
-            "Received frame: codec={:?} size={}x{} stride={} expected={}x{}",
-            frame.codec(),
-            video.width(),
-            video.height(),
-            video.stride(),
-            expected_width,
-            expected_height
-        );
+    println!(
+        "Received frame: codec={:?} size={}x{} stride={} expected={}x{}",
+        frame.codec(),
+        frame.width(),
+        frame.height(),
+        frame.stride(),
+        expected_width,
+        expected_height
+    );
 
-        match video.raw_data() {
-            Some(data) => {
-                for sample in samples {
-                    let expected = sample.expected;
-                    let x = sample.x;
-                    let y = sample.y;
-                    match frame.codec() {
-                        Codec::BGRA => {
-                            if let Some(actual) =
-                                bgra_pixel(data, video.stride() as usize, x as usize, y as usize)
-                            {
-                                println!(
-                                    "Point ({},{}): actual={:?} expected={:?}",
-                                    x, y, actual, expected
-                                );
-                            } else {
-                                println!("Point ({},{}): unavailable BGRA data", x, y);
-                            }
-                        }
-                        Codec::UYVY => {
-                            if let Some(actual) = uyvy_pixel_to_rgb(
-                                data,
-                                video.stride() as usize,
-                                x as usize,
-                                y as usize,
-                            ) {
-                                println!(
-                                    "Point ({},{}): actual={:?} expected={:?}",
-                                    x, y, actual, expected
-                                );
-                            } else {
-                                println!("Point ({},{}): unavailable UYVY data", x, y);
-                            }
-                        }
-                        other => {
-                            println!("Unsupported codec for debug output: {:?}", other);
-                        }
+    if let Some(data) = frame.raw_data() {
+        for sample in samples {
+            let expected = sample.expected;
+            let x = sample.x;
+            let y = sample.y;
+            match frame.codec() {
+                Codec::BGRA => {
+                    if let Some(actual) =
+                        bgra_pixel(data, frame.stride() as usize, x as usize, y as usize)
+                    {
+                        println!(
+                            "Point ({},{}): actual={:?} expected={:?}",
+                            x, y, actual, expected
+                        );
+                    } else {
+                        println!("Point ({},{}): unavailable BGRA data", x, y);
                     }
                 }
-            }
-            None => {
-                println!("Received video frame with no data payload");
+                Codec::UYVY => {
+                    if let Some(actual) =
+                        uyvy_pixel_to_rgb(data, frame.stride() as usize, x as usize, y as usize)
+                    {
+                        println!(
+                            "Point ({},{}): actual={:?} expected={:?}",
+                            x, y, actual, expected
+                        );
+                    } else {
+                        println!("Point ({},{}): unavailable UYVY data", x, y);
+                    }
+                }
+                other => {
+                    println!("Unsupported codec for debug output: {:?}", other);
+                }
             }
         }
     } else {
-        println!("Received non-video frame: codec={:?}", frame.codec());
+        println!("No raw data in frame.");
     }
 }
 

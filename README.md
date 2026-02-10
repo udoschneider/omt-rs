@@ -91,8 +91,7 @@ let mut receiver = Receiver::create(
 ).expect("create receiver");
 
 if let Ok(Some(frame)) = receiver.receive(FrameType::Video, Timeout::from_millis(1000)) {
-    let video = frame.video().expect("video frame");
-    println!("{}x{} @ {}/{}", video.width(), video.height(), video.frame_rate().0, video.frame_rate().1);
+    println!("{}x{} @ {}/{}", frame.width(), frame.height(), frame.frame_rate().0, frame.frame_rate().1);
 }
 ```
 
@@ -101,15 +100,15 @@ if let Ok(Some(frame)) = receiver.receive(FrameType::Video, Timeout::from_millis
 ### Send video
 
 ```rust
-use omt::{Sender, Source, OutgoingFrame, Codec, ColorSpace, Quality, VideoFlags};
+use omt::{Sender, Name, MediaFrame, Codec, ColorSpace, Quality, VideoFlags};
 
-let source = Source::new("My Sender");
-let sender = Sender::create(&source, Quality::Default).expect("create sender");
+let name = Name::new("My Sender");
+let sender = Sender::create(&name, Quality::Default).expect("create sender");
 
 // Fill `data` with raw uncompressed frame bytes for the chosen format.
 let data = vec![0u8; 1920 * 1080 * 2]; // UYVY example (2 bytes per pixel)
 
-let mut frame = OutgoingFrame::video(
+let mut frame = MediaFrame::video(
     Codec::UYVY,
     1920,
     1080,
@@ -128,10 +127,15 @@ sender.send(&mut frame);
 
 ### Metadata
 
-```rust
-use omt::OutgoingFrame;
+OMT supports bi-directional XML metadata transmission. The protocol uses UTF-8 encoded XML strings. The Rust wrapper automatically handles null termination.
 
-let mut metadata = OutgoingFrame::metadata_xml(
+#### Creating and sending metadata frames
+
+```rust
+use omt::MediaFrame;
+
+// Simple metadata
+let mut metadata = MediaFrame::metadata(
     "<example><value>42</value></example>",
     123456789,
 ).expect("metadata frame");
@@ -139,9 +143,84 @@ let mut metadata = OutgoingFrame::metadata_xml(
 // Send metadata with Sender::send(...)
 ```
 
+#### Web management interface
+
+```rust
+let mut web_metadata = MediaFrame::metadata(
+    r#"<OMTWeb URL="http://192.168.1.100/" />"#,
+    -1,
+).expect("web management metadata");
+```
+
+#### PTZ control metadata
+
+```rust
+// VISCA over IP
+let mut ptz_visca_ip = MediaFrame::metadata(
+    r#"<OMTPTZ Protocol="VISCAoverIP" URL="visca://192.168.1.100:52381" />"#,
+    -1,
+).expect("PTZ VISCA over IP");
+
+// VISCA inband command
+let mut ptz_command = MediaFrame::metadata(
+    r#"<OMTPTZ Protocol="VISCA" Sequence="22" Command="8101040700FF" />"#,
+    -1,
+).expect("PTZ command");
+
+// VISCA inband reply
+let mut ptz_reply = MediaFrame::metadata(
+    r#"<OMTPTZ Protocol="VISCA" Sequence="22" Reply="0011AABBCC" />"#,
+    -1,
+).expect("PTZ reply");
+```
+
+#### Grouped metadata
+
+To send multiple metadata elements in a single frame:
+
+```rust
+let grouped = r#"<OMTGroup>
+<OMTPTZ Protocol="VISCA" Sequence="22" Reply="0011AABBCC" />
+<AncillaryData xmlns="urn:anc:1.0">
+<Packet did="45" sdid="01" field="1" line="21" horizOffset="0" st2110Channel="0" pts90k="32109876" link="A" stream="VANC">
+<Payload>81010A011E0000</Payload>
+</Packet>
+</AncillaryData>
+</OMTGroup>"#;
+
+let mut metadata = MediaFrame::metadata(grouped, -1).expect("grouped metadata");
+```
+
+#### Per-frame metadata
+
+You can attach metadata to individual video or audio frames:
+
+```rust
+use omt::{MediaFrame, Codec, VideoFlags, ColorSpace};
+
+let mut frame = MediaFrame::video(
+    Codec::BGRA,
+    1920,
+    1080,
+    1920 * 4,
+    VideoFlags::NONE,
+    30,
+    1,
+    1.77778,
+    ColorSpace::BT709,
+    -1,
+    vec![0u8; 1920 * 1080 * 4],
+);
+
+// Attach per-frame metadata
+frame.set_frame_metadata("<custom>frame-specific metadata</custom>").unwrap();
+```
 
 
-### Sender metadata
+
+### Sender information
+
+Query sender device/software metadata:
 
 ```rust
 use omt::{Discovery, FrameType, PreferredVideoFormat, ReceiveFlags, Receiver, Timeout};
@@ -163,16 +242,43 @@ for address in addresses {
     .expect("create receiver");
 
     if let Some(info) = receiver.get_sender_info() {
-        println!("{} -> {} {}", address, info.manufacturer, info.product_name);
+        println!("{} -> {} {} v{}", 
+            address, 
+            info.manufacturer, 
+            info.product_name,
+            info.version
+        );
     }
 }
+```
+
+### Connection-level metadata
+
+Senders can attach metadata that is sent to all new connections:
+
+```rust
+use omt::{Sender, Name, Quality};
+
+let name = Name::new("My Camera");
+let sender = Sender::create(&name, Quality::Default).expect("create sender");
+
+// Add web management interface
+sender.add_connection_metadata(r#"<OMTWeb URL="http://192.168.1.100/" />"#).unwrap();
+
+// Add PTZ control information
+sender.add_connection_metadata(
+    r#"<OMTPTZ Protocol="VISCAoverIP" URL="visca://192.168.1.100:52381" />"#
+).unwrap();
+
+// Clear all connection metadata
+sender.clear_connection_metadata();
 ```
 
 ---
 
 ## API overview
 
-The high-level API is re-exported at the crate root (`omt::*`). Newtypes follow `libomt.h` naming: use `Address` for receiver addresses and `Source` for sender names.
+The high-level API is re-exported at the crate root (`omt::*`). Newtypes follow `libomt.h` naming: use `Address` for receiver addresses and `Name` for sender names.
 
 ### Discovery
 
@@ -196,8 +302,8 @@ Discovery uses DNS‑SD (Bonjour/Avahi) or a discovery server depending on your 
 Key APIs:
 
 - `Receiver::create(address, frame_types, preferred_format, flags) -> Result<Receiver, OmtError>`
-- `Receiver::receive(frame_types, timeout: Timeout) -> Result<Option<FrameRef>, OmtError>`
-- `Receiver::send_metadata_xml(xml, timestamp) -> Result<i32, OmtError>`
+- `Receiver::receive(frame_types, timeout: Timeout) -> Result<Option<MediaFrame>, OmtError>`
+- `Receiver::send_metadata(&mut metadata_frame) -> Result<i32, OmtError>`
 - `Receiver::set_tally(tally)`
 - `Receiver::get_tally(timeout: Timeout, &mut tally) -> i32`
 - `Receiver::set_flags(flags)`
@@ -221,10 +327,10 @@ Use `FrameType` to select what to receive:
 
 Key APIs:
 
-- `Sender::create(source: &Source, quality) -> Result<Sender, OmtError>`
-- `Sender::send(&mut OutgoingFrame) -> i32`
+- `Sender::create(name: &Name, quality) -> Result<Sender, OmtError>`
+- `Sender::send(&mut MediaFrame) -> i32`
 - `Sender::connections() -> i32`
-- `Sender::receive_metadata(timeout: Timeout) -> Result<Option<FrameRef>, OmtError>`
+- `Sender::receive_metadata(timeout: Timeout) -> Result<Option<MediaFrame>, OmtError>`
 - `Sender::set_sender_info(&SenderInfo)`
 - `Sender::add_connection_metadata(metadata)`
 - `Sender::clear_connection_metadata()`
@@ -235,16 +341,14 @@ Key APIs:
 
 ### Frames and data access
 
-Received frames are exposed through `FrameRef`, `VideoFrame`, and `AudioFrame`.
+Received frames are exposed through `MediaFrame`.
 
-- `FrameRef::frame_type()` → `FrameType`
-- `FrameRef::timestamp()` → `i64` (OMT timebase; 10,000,000 ticks per second)
-- `FrameRef::codec()` → `Codec`
-- `FrameRef::video()` → `Option<VideoFrame>`
-- `FrameRef::audio()` → `Option<AudioFrame>`
-- `FrameRef::metadata()` → `Option<&[u8]>` (UTF‑8 XML with terminating null)
+- `MediaFrame::frame_type()` → `FrameType`
+- `MediaFrame::timestamp()` → `i64` (OMT timebase; 10,000,000 ticks per second)
+- `MediaFrame::codec()` → `Codec`
+- `MediaFrame::xml_data()` → `Option<&str>` (UTF‑8 XML metadata without null terminator, for Metadata frame types)
 
-`VideoFrame` provides:
+`MediaFrame` provides:
 
 - `width()`, `height()`, `stride()`
 - `frame_rate() -> (i32, i32)`
@@ -257,20 +361,21 @@ Received frames are exposed through `FrameRef`, `VideoFrame`, and `AudioFrame`.
 - `rgb16_data() -> Option<Vec<u8>>` (16-bit RGB conversion, 6 bytes per pixel)
 - `rgba16_data() -> Option<Vec<u8>>` (16-bit RGBA conversion, 8 bytes per pixel)
 - `compressed_data() -> Option<&[u8]>` (VMX1 if `ReceiveFlags::INCLUDE_COMPRESSED` or `COMPRESSED_ONLY`)
-- `metadata() -> Option<&[u8]>` (per‑frame metadata payload)
+- `frame_metadata() -> Option<&str>` (per‑frame metadata payload without null terminator)
 
-`AudioFrame` provides:
+For audio frames, `MediaFrame` also provides:
 
 - `sample_rate()`, `channels()`, `samples_per_channel()`
-- `raw_data() -> Option<&[u8]>` (planar 32‑bit float audio, FPA1)
-- `data() -> Option<Vec<Vec<f32>>>`
-- `compressed_data()` and `metadata()` (if present)
+- `audio_data() -> Option<Vec<Vec<f32>>>` (planar 32‑bit float audio)
 
 #### Timestamps and metadata
 
 - Timestamps use the OMT timebase (10,000,000 ticks per second) and should represent the original capture time for proper synchronization.
 - For outbound video frames, a timestamp of `-1` asks the sender to generate timestamps and pace delivery according to the frame rate.
-- Metadata frames and per‑frame metadata payloads are UTF‑8 XML with a terminating null; lengths include the null byte.
+- **Metadata strings and null terminators:**
+  - The low-level C API (`libomt.h`) requires metadata strings to *include* the null terminator in both the data and length.
+  - The high-level Rust wrapper handles this automatically: functions accepting metadata strings expect strings *without* null terminators and will add the null terminator behind the scenes.
+  - Passing a string containing a null character (`'\0'`) to Rust wrapper functions will result in an error.
 - Received frame buffers are valid only until the next receive call on the same sender/receiver.
 
 ### Settings and logging
@@ -364,7 +469,7 @@ When receiving uncompressed video, OMT delivers only `UYVY`, `UYVA`, `BGRA`, or 
 
 ### Format Conversion Support
 
-The `VideoFrame` provides format conversion methods: `rgb8_data()`, `rgba8_data()`, `rgb16_data()`, and `rgba16_data()`. **However, not all codecs support all output formats.** The following table shows which conversions are currently implemented:
+The `MediaFrame` provides format conversion methods: `rgb8_data()`, `rgba8_data()`, `rgb16_data()`, and `rgba16_data()`. **However, not all codecs support all output formats.** The following table shows which conversions are currently implemented:
 
 | Input Codec | `rgb8_data()` | `rgba8_data()` | `rgb16_data()` | `rgba16_data()` |
 |-------------|---------------|----------------|--------------|-----------------|
@@ -457,7 +562,7 @@ The `omt` crate is safe to use as long as you follow these rules:
 
 2. **Data ownership**  
    - Received frame buffers are owned by libomt. Do **not** free them.
-   - Outgoing frames own their `Vec<u8>` payload. Keep the `OutgoingFrame` alive until `Sender::send` returns.
+   - Outgoing frames own their `Vec<u8>` payload. Keep the `MediaFrame` alive until `Sender::send` returns.
 
 3. **FFI zero‑init**  
    When using raw FFI types, zero‑initialize `OMTMediaFrame` before use. The high-level API does this for you.
