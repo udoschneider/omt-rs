@@ -70,12 +70,22 @@ cargo build
 
 ```rust
 use omt::Discovery;
+use std::time::Duration;
 
+// Single attempt - may miss sources on first call
 let addresses = Discovery::get_addresses();
 for addr in addresses {
     println!("{}", addr);
 }
+
+// Multiple attempts with delay - recommended for complete results
+let addresses = Discovery::get_addresses_with_options(3, Duration::from_millis(100));
+for addr in addresses {
+    println!("{}", addr);
+}
 ```
+
+**Note:** The first call to `get_addresses()` starts discovery in a background thread, so initial results may be incomplete. Use `get_addresses_with_options()` or `get_addresses_with_backoff()` for reliable discovery.
 
 ### Receive video
 
@@ -287,12 +297,13 @@ The high-level API is re-exported at the crate root (`omt::*`). Newtypes follow 
 
 Key APIs:
 
-- `Discovery::get_addresses() -> Vec<Address>`
-- `Discovery::get_addresses_with_options(attempts, delay: Duration)`
-- `Discovery::get_addresses_with_backoff(attempts, initial_delay: Duration, max_delay: Duration, backoff_factor)`
+- `Discovery::get_addresses() -> Vec<Address>` — Single attempt
+- `Discovery::get_addresses_with_options(attempts, delay)` — Multiple attempts with fixed delay
+- `Discovery::get_addresses_with_backoff(attempts, initial_delay, max_delay, backoff_factor)` — Multiple attempts with exponential backoff
+- `Discovery::addresses()` — Iterator over single attempt results
+- `Discovery::addresses_with_backoff(...)` — Iterator with backoff
 
-
-Discovery uses DNS‑SD (Bonjour/Avahi) or a discovery server depending on your network setup. Debug output is controlled via the `RUST_LOG` environment variable (see [Logging](#logging-with-the-log-crate)).
+Discovery uses DNS‑SD (Bonjour/Avahi) or a discovery server depending on your network setup. The first discovery call starts a background thread, so multiple attempts with delays are recommended for complete results. Debug output is controlled via the `RUST_LOG` environment variable (see [Logging](#logging-with-the-log-crate)).
 
 ### Receiver
 

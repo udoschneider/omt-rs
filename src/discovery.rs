@@ -1,12 +1,9 @@
-//! High-level discovery utilities for Open Media Transport (OMT).
+//! Discovery utilities for finding OMT senders on the local network.
 //!
-//! OMT publishes sender names on the LAN using DNS-SD (Bonjour/Avahi). When
-//! multicast is unavailable, OMT can use a discovery server over TCP.
-//! The C API exposes this via `omt_discovery_getaddresses` in `libomt.h`.
-//! See <https://github.com/openmediatransport> for protocol background.
+//! OMT publishes sender addresses via DNS-SD (Bonjour/Avahi). This module wraps
+//! the C API's `omt_discovery_getaddresses` with retry/backoff helpers and iterators.
 //!
-//! This module wraps the low-level discovery API with retry/backoff helpers and
-//! iterator conveniences.
+//! See <https://github.com/openmediatransport> for protocol details.
 
 use crate::ffi;
 use crate::types::Address;
@@ -15,34 +12,59 @@ use std::collections::HashSet;
 use std::ffi::CStr;
 use std::time::Duration;
 
-/// Discovers OMT senders advertised on the local network.
+/// Discovery interface for OMT senders on the local network.
 pub struct Discovery;
 
 impl Discovery {
-    /// Returns discovered sender addresses using a single attempt with no delay.
+    /// Returns discovered sender addresses with a single attempt.
     ///
-    /// This is a convenience wrapper around `get_addresses_with_options`.
+    /// **Note:** The first call starts discovery in a background thread, so results
+    /// may be incomplete. Use `get_addresses_with_options` for multiple attempts.
     pub fn get_addresses() -> Vec<Address> {
-        Self::get_addresses_with_options(1, Duration::from_millis(0))
+        let mut count: i32 = 0;
+        let list_ptr = unsafe { ffi::omt_discovery_getaddresses(&mut count as *mut i32) };
+
+        debug!("OMT discovery -> count={}", count);
+
+        let mut result = Vec::new();
+
+        if !list_ptr.is_null() && count > 0 {
+            for i in 0..count {
+                let entry_ptr = unsafe { *list_ptr.add(i as usize) };
+                if entry_ptr.is_null() {
+                    continue;
+                }
+                let address = Address::from(
+                    unsafe { CStr::from_ptr(entry_ptr) }
+                        .to_string_lossy()
+                        .to_string(),
+                );
+                debug!("OMT discovery entry: {}", address);
+                result.push(address);
+            }
+        }
+
+        result
     }
 
-    /// Discovers sender addresses using a fixed delay between attempts.
+    /// Returns sender addresses with fixed delay between attempts.
     ///
-    /// - `attempts`: number of discovery attempts (minimum 1).
-    /// - `delay`: delay between attempts.
+    /// # Arguments
+    /// * `attempts` - Number of discovery attempts (minimum 1)
+    /// * `delay` - Fixed delay between attempts
     pub fn get_addresses_with_options(attempts: usize, delay: Duration) -> Vec<Address> {
         Self::get_addresses_with_backoff(attempts, delay, delay, 1.0)
     }
 
-    /// Discovers sender addresses with exponential backoff.
+    /// Returns sender addresses with exponential backoff between attempts.
     ///
-    /// - `attempts`: number of discovery attempts (minimum 1).
-    /// - `initial_delay`: initial delay between attempts.
-    /// - `max_delay`: upper bound on the delay between attempts.
-    /// - `backoff_factor`: multiplier applied after each attempt (values < 1.0 are treated as 1.0).
+    /// Aggregates unique addresses across all attempts.
     ///
-    /// This aggregates unique addresses across all attempts instead of returning
-    /// on the first non-empty result.
+    /// # Arguments
+    /// * `attempts` - Number of discovery attempts (minimum 1)
+    /// * `initial_delay` - Initial delay between attempts
+    /// * `max_delay` - Maximum delay between attempts
+    /// * `backoff_factor` - Delay multiplier per attempt (minimum 1.0)
     pub fn get_addresses_with_backoff(
         attempts: usize,
         initial_delay: Duration,
@@ -62,29 +84,19 @@ impl Discovery {
         let mut result = Vec::new();
 
         for attempt in 1..=attempts {
-            let mut count: i32 = 0;
-            let list_ptr = unsafe { ffi::omt_discovery_getaddresses(&mut count as *mut i32) };
+            let addresses = Self::get_addresses();
 
             debug!(
                 "OMT discovery attempt {}/{} -> count={} (delay_ms={})",
-                attempt, attempts, count, delay_ms
+                attempt,
+                attempts,
+                addresses.len(),
+                delay_ms
             );
 
-            if !list_ptr.is_null() && count > 0 {
-                for i in 0..count {
-                    let entry_ptr = unsafe { *list_ptr.add(i as usize) };
-                    if entry_ptr.is_null() {
-                        continue;
-                    }
-                    let address = Address::from(
-                        unsafe { CStr::from_ptr(entry_ptr) }
-                            .to_string_lossy()
-                            .to_string(),
-                    );
-                    debug!("OMT discovery entry: {}", address);
-                    if seen.insert(address.clone()) {
-                        result.push(address);
-                    }
+            for address in addresses {
+                if seen.insert(address.clone()) {
+                    result.push(address);
                 }
             }
 
@@ -101,13 +113,11 @@ impl Discovery {
     }
 
     /// Returns an iterator over discovered sender addresses.
-    ///
-    /// This collects the current discovery results and returns an owning iterator.
     pub fn addresses() -> impl Iterator<Item = Address> {
         Self::get_addresses().into_iter()
     }
 
-    /// Returns an iterator over discovered sender addresses using backoff options.
+    /// Returns an iterator over discovered sender addresses with exponential backoff.
     pub fn addresses_with_backoff(
         attempts: usize,
         initial_delay: Duration,
