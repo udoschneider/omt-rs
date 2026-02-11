@@ -167,7 +167,7 @@ extern "C" {
     pub fn omt_receive_send(instance: *mut omt_receive_t, frame: *mut OMTMediaFrame) -> c_int;
     pub fn omt_receive_settally(instance: *mut omt_receive_t, tally: *mut OMTTally);
     pub fn omt_receive_gettally(
-        instance: *mut omt_send_t,
+        instance: *mut omt_receive_t,
         timeoutMilliseconds: c_int,
         tally: *mut OMTTally,
     ) -> c_int;

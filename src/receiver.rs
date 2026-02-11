@@ -275,11 +275,8 @@ impl Receiver {
             program: 0,
         };
         let result = unsafe {
-            ffi::omt_receive_gettally(
-                self.handle.as_ptr() as *mut ffi::omt_send_t,
-                timeout.as_millis_i32(),
-                &mut raw,
-            ) as i32
+            ffi::omt_receive_gettally(self.handle.as_ptr(), timeout.as_millis_i32(), &mut raw)
+                as i32
         };
         *tally = Tally::from(&raw);
         result
