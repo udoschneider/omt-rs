@@ -1,4 +1,4 @@
-use crate::{Address, Discovery, OmtError, Timeout};
+use crate::{Address, Discovery, Error, Timeout};
 use std::env;
 
 /// Strips trailing null terminators from a byte slice and converts to a string.
@@ -72,7 +72,7 @@ pub fn without_null_terminator(slice: &[u8]) -> &str {
 ///
 /// # Errors
 ///
-/// Returns `OmtError::InvalidCString` if the input string contains any null bytes.
+/// Returns `Error::InvalidCString` if the input string contains any null bytes.
 ///
 /// # Examples
 ///
@@ -87,10 +87,10 @@ pub fn without_null_terminator(slice: &[u8]) -> &str {
 /// let result = null_terminated_bytes("test\0data");
 /// assert!(result.is_err());
 /// ```
-pub fn null_terminated_bytes<S: AsRef<str>>(s: S) -> Result<Vec<u8>, OmtError> {
+pub fn null_terminated_bytes<S: AsRef<str>>(s: S) -> Result<Vec<u8>, Error> {
     let s = s.as_ref();
     if s.contains('\0') {
-        return Err(OmtError::InvalidCString);
+        return Err(Error::InvalidCString);
     }
     let mut bytes = s.as_bytes().to_vec();
     bytes.push(0);

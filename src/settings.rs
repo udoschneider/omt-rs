@@ -5,22 +5,48 @@
 //! For protocol context, see:
 //! <https://github.com/openmediatransport>
 //!
+//! ## Settings Storage
+//!
 //! Settings are stored in `~/.OMT/settings.xml` on Mac and Linux and
 //! `C:\ProgramData\OMT\settings.xml` on Windows by default. To override the
 //! default folder used for settings, set the `OMT_STORAGE_PATH` environment
 //! variable prior to calling any OMT functions.
+//!
+//! ## Supported Settings
+//!
+//! The following settings are currently supported:
+//!
+//! * **DiscoveryServer** [string] - Specify a URL in the format `omt://hostname:port` to connect to for discovery. If left blank, default DNS-SD discovery behavior is enabled.
+//! * **NetworkPortStart** [integer] - Specify the first port to create Send instances on. Defaults to 6400.
+//! * **NetworkPortEnd** [integer] - Specify the last port to create Send instances on. Defaults to 6600.
+//!
+//! Settings changed here will persist only for the currently running process.
 use crate::ffi;
-use crate::OmtError;
+use crate::Error;
 use std::ffi::{CStr, CString};
 use std::ptr;
 
 /// Sets the optional log file path for libomt logging.
 ///
-/// Use `None` to disable file logging.
-pub fn set_logging_filename(path: Option<&str>) -> Result<(), OmtError> {
+/// # Arguments
+///
+/// * `path` - An optional file path for log output. Use `None` to disable file logging.
+///
+/// # Examples
+///
+/// ```no_run
+/// use omt::settings::set_logging_filename;
+///
+/// // Enable logging to a file
+/// set_logging_filename(Some("/var/log/omt.log")).unwrap();
+///
+/// // Disable file logging
+/// set_logging_filename(None).unwrap();
+/// ```
+pub fn set_logging_filename(path: Option<&str>) -> Result<(), Error> {
     match path {
         Some(p) => {
-            let c_path = CString::new(p).map_err(|_| OmtError::InvalidCString)?;
+            let c_path = CString::new(p).map_err(|_| Error::InvalidCString)?;
             unsafe { ffi::omt_setloggingfilename(c_path.as_ptr()) };
         }
         None => unsafe { ffi::omt_setloggingfilename(ptr::null()) },
@@ -29,6 +55,23 @@ pub fn set_logging_filename(path: Option<&str>) -> Result<(), OmtError> {
 }
 
 /// Reads a string setting by name.
+///
+/// Retrieves the current value of a string setting as a UTF-8 encoded string.
+/// Returns `None` if the setting is not found or cannot be retrieved.
+///
+/// # Arguments
+///
+/// * `name` - The name of the setting to retrieve.
+///
+/// # Examples
+///
+/// ```no_run
+/// use omt::settings::settings_get_string;
+///
+/// if let Some(server) = settings_get_string("DiscoveryServer") {
+///     println!("Discovery server: {}", server);
+/// }
+/// ```
 pub fn settings_get_string(name: &str) -> Option<String> {
     let c_name = CString::new(name).ok()?;
     let mut buf = vec![0u8; ffi::OMT_MAX_STRING_LENGTH];
@@ -47,14 +90,47 @@ pub fn settings_get_string(name: &str) -> Option<String> {
 }
 
 /// Sets a string setting by name.
-pub fn settings_set_string(name: &str, value: &str) -> Result<(), OmtError> {
-    let c_name = CString::new(name).map_err(|_| OmtError::InvalidCString)?;
-    let c_value = CString::new(value).map_err(|_| OmtError::InvalidCString)?;
+///
+/// Sets a string setting that will be used for the duration of this process.
+/// The value should be a UTF-8 encoded string.
+///
+/// # Arguments
+///
+/// * `name` - The name of the setting to set.
+/// * `value` - The UTF-8 encoded string value to set.
+///
+/// # Examples
+///
+/// ```no_run
+/// use omt::settings::settings_set_string;
+///
+/// settings_set_string("DiscoveryServer", "omt://localhost:7400").unwrap();
+/// ```
+pub fn settings_set_string(name: &str, value: &str) -> Result<(), Error> {
+    let c_name = CString::new(name).map_err(|_| Error::InvalidCString)?;
+    let c_value = CString::new(value).map_err(|_| Error::InvalidCString)?;
     unsafe { ffi::omt_settings_set_string(c_name.as_ptr(), c_value.as_ptr()) };
     Ok(())
 }
 
 /// Reads an integer setting by name.
+///
+/// Retrieves the current value of an integer setting.
+/// Returns `None` if the setting is not found or cannot be retrieved.
+///
+/// # Arguments
+///
+/// * `name` - The name of the setting to retrieve.
+///
+/// # Examples
+///
+/// ```no_run
+/// use omt::settings::settings_get_integer;
+///
+/// if let Some(port) = settings_get_integer("NetworkPortStart") {
+///     println!("Network port start: {}", port);
+/// }
+/// ```
 pub fn settings_get_integer(name: &str) -> Option<i32> {
     let c_name = CString::new(name).ok()?;
     let val = unsafe { ffi::omt_settings_get_integer(c_name.as_ptr()) };
@@ -62,8 +138,23 @@ pub fn settings_get_integer(name: &str) -> Option<i32> {
 }
 
 /// Sets an integer setting by name.
-pub fn settings_set_integer(name: &str, value: i32) -> Result<(), OmtError> {
-    let c_name = CString::new(name).map_err(|_| OmtError::InvalidCString)?;
+///
+/// Sets an integer setting that will be used for the duration of this process.
+///
+/// # Arguments
+///
+/// * `name` - The name of the setting to set.
+/// * `value` - The integer value to set.
+///
+/// # Examples
+///
+/// ```no_run
+/// use omt::settings::settings_set_integer;
+///
+/// settings_set_integer("NetworkPortStart", 7000).unwrap();
+/// ```
+pub fn settings_set_integer(name: &str, value: i32) -> Result<(), Error> {
+    let c_name = CString::new(name).map_err(|_| Error::InvalidCString)?;
     unsafe { ffi::omt_settings_set_integer(c_name.as_ptr(), value) };
     Ok(())
 }
@@ -72,23 +163,60 @@ pub fn settings_set_integer(name: &str, value: i32) -> Result<(), OmtError> {
 ///
 /// Returns a URL in the format `omt://hostname:port` to connect to for discovery.
 /// If `None` is returned, default DNS-SD discovery behavior is enabled.
+///
+/// # Examples
+///
+/// ```no_run
+/// use omt::settings::get_discovery_server;
+///
+/// if let Some(server) = get_discovery_server() {
+///     println!("Using discovery server: {}", server);
+/// } else {
+///     println!("Using default DNS-SD discovery");
+/// }
+/// ```
 pub fn get_discovery_server() -> Option<String> {
     settings_get_string("DiscoveryServer")
 }
 
 /// Sets the DiscoveryServer setting.
 ///
+/// Specifies a URL in the format `omt://hostname:port` to connect to for discovery.
+/// If left blank, default DNS-SD discovery behavior is enabled.
+///
 /// # Arguments
+///
 /// * `server` - A URL in the format `omt://hostname:port` to connect to for discovery.
 ///   Pass an empty string to use default DNS-SD discovery.
-pub fn set_discovery_server(server: &str) -> Result<(), OmtError> {
+///
+/// # Examples
+///
+/// ```no_run
+/// use omt::settings::set_discovery_server;
+///
+/// // Use a specific discovery server
+/// set_discovery_server("omt://discovery.example.com:7400").unwrap();
+///
+/// // Use default DNS-SD discovery
+/// set_discovery_server("").unwrap();
+/// ```
+pub fn set_discovery_server(server: &str) -> Result<(), Error> {
     settings_set_string("DiscoveryServer", server)
 }
 
 /// Gets the NetworkPortStart setting.
 ///
-/// Returns the first port to create Send instances on.
+/// Specifies the first port to create Send instances on.
 /// Defaults to 6400 if not set.
+///
+/// # Examples
+///
+/// ```no_run
+/// use omt::settings::get_network_port_start;
+///
+/// let port_start = get_network_port_start();
+/// println!("Network port start: {}", port_start);
+/// ```
 pub fn get_network_port_start() -> i32 {
     match settings_get_integer("NetworkPortStart") {
         Some(0) => 6400, // 0 indicates the setting is not set
@@ -99,16 +227,36 @@ pub fn get_network_port_start() -> i32 {
 
 /// Sets the NetworkPortStart setting.
 ///
+/// Specifies the first port to create Send instances on.
+///
 /// # Arguments
+///
 /// * `port` - The first port to create Send instances on.
-pub fn set_network_port_start(port: i32) -> Result<(), OmtError> {
+///
+/// # Examples
+///
+/// ```no_run
+/// use omt::settings::set_network_port_start;
+///
+/// set_network_port_start(7000).unwrap();
+/// ```
+pub fn set_network_port_start(port: i32) -> Result<(), Error> {
     settings_set_integer("NetworkPortStart", port)
 }
 
 /// Gets the NetworkPortEnd setting.
 ///
-/// Returns the last port to create Send instances on.
+/// Specifies the last port to create Send instances on.
 /// Defaults to 6600 if not set.
+///
+/// # Examples
+///
+/// ```no_run
+/// use omt::settings::get_network_port_end;
+///
+/// let port_end = get_network_port_end();
+/// println!("Network port end: {}", port_end);
+/// ```
 pub fn get_network_port_end() -> i32 {
     match settings_get_integer("NetworkPortEnd") {
         Some(0) => 6600, // 0 indicates the setting is not set
@@ -119,9 +267,20 @@ pub fn get_network_port_end() -> i32 {
 
 /// Sets the NetworkPortEnd setting.
 ///
+/// Specifies the last port to create Send instances on.
+///
 /// # Arguments
+///
 /// * `port` - The last port to create Send instances on.
-pub fn set_network_port_end(port: i32) -> Result<(), OmtError> {
+///
+/// # Examples
+///
+/// ```no_run
+/// use omt::settings::set_network_port_end;
+///
+/// set_network_port_end(7200).unwrap();
+/// ```
+pub fn set_network_port_end(port: i32) -> Result<(), Error> {
     settings_set_integer("NetworkPortEnd", port)
 }
 
@@ -129,16 +288,36 @@ pub fn set_network_port_end(port: i32) -> Result<(), OmtError> {
 ///
 /// Returns the port range to create Send instances on.
 /// Defaults to (6400, 6600) if not set.
+///
+/// # Examples
+///
+/// ```no_run
+/// use omt::settings::get_network_port_range;
+///
+/// let (start, end) = get_network_port_range();
+/// println!("Port range: {} - {}", start, end);
+/// ```
 pub fn get_network_port_range() -> (i32, i32) {
     (get_network_port_start(), get_network_port_end())
 }
 
 /// Sets the network port range.
 ///
+/// Convenience function to set both NetworkPortStart and NetworkPortEnd settings.
+///
 /// # Arguments
+///
 /// * `start` - The first port to create Send instances on.
 /// * `end` - The last port to create Send instances on.
-pub fn set_network_port_range(start: i32, end: i32) -> Result<(), OmtError> {
+///
+/// # Examples
+///
+/// ```no_run
+/// use omt::settings::set_network_port_range;
+///
+/// set_network_port_range(7000, 7200).unwrap();
+/// ```
+pub fn set_network_port_range(start: i32, end: i32) -> Result<(), Error> {
     set_network_port_start(start)?;
     set_network_port_end(end)
 }

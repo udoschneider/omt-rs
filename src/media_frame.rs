@@ -1,19 +1,119 @@
 //! Media frame types for both sending and receiving via OMT.
 //!
-//! This module provides the `MediaFrame` type for constructing video, audio,
+//! This module provides the [`MediaFrame`] type for constructing video, audio,
 //! and metadata frames to be sent over the OMT transport, as well as accessing
 //! received frames.
+//!
+//! # Frame Types
+//!
+//! OMT supports three types of media frames:
+//!
+//! - **Video frames**: Contain uncompressed or compressed video data with associated
+//!   metadata like resolution, frame rate, color space, etc.
+//! - **Audio frames**: Contain planar 32-bit floating point audio data with sample rate
+//!   and channel information.
+//! - **Metadata frames**: Contain UTF-8 encoded XML strings for control data, PTZ commands,
+//!   web management interfaces, ancillary data, etc.
+//!
+//! # Timestamps
+//!
+//! All frames use the OMT timebase where 1 second = 10,000,000 ticks. This allows for
+//! precise synchronization between audio and video streams.
+//!
+//! A special timestamp value of `-1` tells the sender to automatically generate timestamps
+//! and throttle frame delivery based on the specified frame rate or sample rate.
+//!
+//! # Video Codecs
+//!
+//! When sending video frames, the following codecs are supported:
+//! - `UYVY`, `YUY2`: 8-bit YUV 4:2:2 formats
+//! - `NV12`, `YV12`: 8-bit YUV 4:2:0 planar formats
+//! - `BGRA`: 8-bit RGB with alpha
+//! - `UYVA`: 8-bit YUV 4:2:2 with alpha
+//! - `P216`, `PA16`: 16-bit high bit depth formats
+//! - `VMX1`: Compressed video format
+//!
+//! When receiving video frames, only `UYVY`, `UYVA`, `BGRA`, and `BGRX` are supported.
+//!
+//! # Audio Codec
+//!
+//! Audio frames use the `FPA1` codec (32-bit floating point planar audio).
+//! Up to 32 audio channels are supported.
+//!
+//! # Frame Metadata
+//!
+//! Both video and audio frames can have per-frame metadata attached using
+//! [`MediaFrame::set_frame_metadata`]. This metadata is carried alongside the payload
+//! and is limited to 65,536 bytes.
+//!
+//! # Examples
+//!
+//! ## Creating a video frame
+//!
+//! ```
+//! use omt::{MediaFrame, Codec, VideoFlags, ColorSpace};
+//!
+//! let frame = MediaFrame::video(
+//!     Codec::BGRA,
+//!     1920,
+//!     1080,
+//!     1920 * 4,
+//!     VideoFlags::NONE,
+//!     30,
+//!     1,
+//!     1.77778,
+//!     ColorSpace::BT709,
+//!     -1,  // Auto-generate timestamps
+//!     vec![0u8; 1920 * 1080 * 4],
+//! );
+//! ```
+//!
+//! ## Creating an audio frame
+//!
+//! ```
+//! use omt::{MediaFrame, Codec};
+//!
+//! let frame = MediaFrame::audio(
+//!     Codec::FPA1,
+//!     48000,  // Sample rate
+//!     2,      // Stereo
+//!     1920,   // Samples per channel
+//!     -1,     // Auto-generate timestamps
+//!     vec![0u8; 1920 * 2 * 4],
+//! );
+//! ```
+//!
+//! ## Creating a metadata frame
+//!
+//! ```no_run
+//! use omt::MediaFrame;
+//!
+//! let frame = MediaFrame::metadata(
+//!     r#"<OMTPTZ Protocol="VISCA" Sequence="22" Command="8101040700FF" />"#,
+//!     -1,
+//! ).expect("metadata frame");
+//! ```
 
 use crate::ffi;
 use crate::helpers::{null_terminated_bytes, without_null_terminator};
 use crate::types::{Codec, ColorSpace, VideoFlags};
 use crate::video_conversion;
-use crate::OmtError;
+use crate::Error;
 use rgb::bytemuck;
 
 /// Media frame that can be either owned (for sending) or borrowed (for receiving).
 ///
-/// The internal buffer is kept alive for the duration of the send call for owned frames.
+/// This type wraps the underlying C FFI `OMTMediaFrame` structure and provides
+/// safe Rust accessors for frame properties and data. Frames can be constructed for
+/// sending video, audio, or metadata, or received from an OMT sender.
+///
+/// The internal buffers (data, compressed data, frame metadata) are kept alive for
+/// the duration of the send call for owned frames.
+///
+/// # Lifetime
+///
+/// The `'a` lifetime parameter represents the lifetime of borrowed frames received
+/// from an OMT sender. Owned frames (created for sending) use `'static` lifetime.
 pub struct MediaFrame<'a> {
     frame: MediaFrameInner<'a>,
     _data: Option<Vec<u8>>,
@@ -30,9 +130,56 @@ impl<'a> MediaFrame<'a> {
 
     /// Creates a video frame from raw, uncompressed pixel data.
     ///
-    /// The `data` buffer must match the chosen `codec`, `width`, `height`, and `stride`.
-    /// Timestamps use the OMT timebase (10,000,000 ticks per second). Use `timestamp = -1`
-    /// to let OMT generate timestamps and pace frames based on the frame rate.
+    /// This constructs an owned video frame for sending over OMT. The `data` buffer must
+    /// contain pixel data in the format specified by `codec`, with dimensions matching
+    /// `width`, `height`, and `stride`.
+    ///
+    /// # Parameters
+    ///
+    /// - `codec`: The pixel format of the data. Supported sending codecs include:
+    ///   `UYVY`, `YUY2`, `NV12`, `YV12`, `BGRA`, `UYVA`, `P216`, `PA16`, and `VMX1`.
+    /// - `width`: Frame width in pixels.
+    /// - `height`: Frame height in pixels.
+    /// - `stride`: Number of bytes per row of pixels. Typically:
+    ///   - `width * 2` for UYVY/YUY2
+    ///   - `width * 4` for BGRA
+    ///   - `width` for planar formats
+    /// - `flags`: Video flags indicating properties like interlacing, alpha channel, etc.
+    /// - `frame_rate_n`: Frame rate numerator (frames per second).
+    /// - `frame_rate_d`: Frame rate denominator. For example, `60/1` = 60 fps, `30000/1001` ≈ 29.97 fps.
+    /// - `aspect_ratio`: Display aspect ratio as width/height. For example, `1.77778` for 16:9.
+    /// - `color_space`: Color space of the video (BT601, BT709, or Undefined).
+    /// - `timestamp`: Frame timestamp in OMT timebase (10,000,000 ticks per second).
+    ///   Use `-1` to auto-generate timestamps based on frame rate.
+    /// - `data`: Raw pixel data buffer. The size must match the stride and height.
+    ///
+    /// # Timestamps
+    ///
+    /// Timestamps represent the accurate time the frame was generated at the original source
+    /// and should be used on the receiving end to synchronize and record with proper presentation
+    /// timestamps (PTS). A value of `-1` tells the sender to generate timestamps automatically
+    /// and throttle delivery to maintain the specified frame rate.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use omt::{MediaFrame, Codec, VideoFlags, ColorSpace};
+    ///
+    /// // Create a 1920x1080 BGRA frame at 30 fps
+    /// let frame = MediaFrame::video(
+    ///     Codec::BGRA,
+    ///     1920,
+    ///     1080,
+    ///     1920 * 4,
+    ///     VideoFlags::NONE,
+    ///     30,
+    ///     1,
+    ///     1.77778,
+    ///     ColorSpace::BT709,
+    ///     -1,
+    ///     vec![0u8; 1920 * 1080 * 4],
+    /// );
+    /// ```
     #[allow(clippy::too_many_arguments)]
     pub fn video(
         codec: Codec,
@@ -82,13 +229,50 @@ impl<'a> MediaFrame<'a> {
 
     /// Creates an audio frame from raw, uncompressed sample data.
     ///
-    /// The `data` buffer should match the chosen `codec`, `sample_rate`,
-    /// `channels`, and `samples_per_channel`. For planar 32-bit float audio
-    /// (FPA1), this is `channels * samples_per_channel * 4` bytes.
-    /// A maximum of 32 audio channels are supported.
-    /// Timestamps use the OMT timebase (10,000,000 ticks per second). Use
-    /// `timestamp = -1` to let OMT generate timestamps and pace frames based
-    /// on the sample rate.
+    /// This constructs an owned audio frame for sending over OMT. The audio must be
+    /// in planar 32-bit floating point format (FPA1 codec), which is the only supported
+    /// audio format.
+    ///
+    /// # Parameters
+    ///
+    /// - `codec`: Must be [`Codec::FPA1`] (32-bit floating point planar audio).
+    /// - `sample_rate`: Sample rate in Hz (e.g., 48000, 44100).
+    /// - `channels`: Number of audio channels. Maximum of 32 channels supported.
+    /// - `samples_per_channel`: Number of samples in each channel/plane.
+    /// - `timestamp`: Audio timestamp in OMT timebase (10,000,000 ticks per second).
+    ///   Use `-1` to auto-generate timestamps based on sample rate.
+    /// - `data`: Planar 32-bit floating point audio data. Each plane should contain
+    ///   `samples_per_channel * 4` bytes. Total size: `channels * samples_per_channel * 4`.
+    ///
+    /// # Data Format
+    ///
+    /// The audio data is planar, meaning each channel's samples are stored contiguously:
+    /// `[channel0_samples...][channel1_samples...][channel2_samples...]`
+    ///
+    /// Each sample is a 32-bit little-endian float.
+    ///
+    /// # Timestamps
+    ///
+    /// Timestamps represent the accurate time the audio sample was generated at the original
+    /// source and should be used on the receiving end to synchronize with video. A value of
+    /// `-1` tells the sender to generate timestamps automatically and throttle delivery to
+    /// maintain the specified sample rate.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use omt::{MediaFrame, Codec};
+    ///
+    /// // Create a stereo audio frame at 48kHz with 1920 samples per channel
+    /// let frame = MediaFrame::audio(
+    ///     Codec::FPA1,
+    ///     48000,
+    ///     2,
+    ///     1920,
+    ///     -1,
+    ///     vec![0u8; 1920 * 2 * 4],
+    /// );
+    /// ```
     pub fn audio(
         codec: Codec,
         sample_rate: i32,
@@ -238,7 +422,7 @@ impl<'a> MediaFrame<'a> {
     ///
     /// let metadata = MediaFrame::metadata(grouped, -1).expect("grouped metadata");
     /// ```
-    pub fn metadata<S: AsRef<str>>(data: S, timestamp: i64) -> Result<Self, OmtError> {
+    pub fn metadata<S: AsRef<str>>(data: S, timestamp: i64) -> Result<Self, Error> {
         let bytes = null_terminated_bytes(data.as_ref())?;
         let data_len = bytes.len() as i32;
         let data_ptr = bytes.as_ptr() as *mut std::ffi::c_void;
@@ -272,10 +456,10 @@ impl<'a> MediaFrame<'a> {
             _frame_metadata: None,
         })
     }
+}
 
-    // Construction method for receiving (borrowed frames)
-
-    pub(crate) fn new(raw: &'a ffi::OMTMediaFrame) -> Self {
+impl<'a> From<&'a ffi::OMTMediaFrame> for MediaFrame<'a> {
+    fn from(raw: &'a ffi::OMTMediaFrame) -> Self {
         Self {
             frame: MediaFrameInner::Borrowed(raw),
             _data: None,
@@ -287,8 +471,6 @@ impl<'a> MediaFrame<'a> {
 impl<'a> MediaFrame<'a> {
     // Common Methods for all frame types
 
-    // Internal accessor for FFI
-
     pub(crate) fn as_mut(&mut self) -> &mut ffi::OMTMediaFrame {
         match &mut self.frame {
             MediaFrameInner::Owned(ref mut frame) => frame,
@@ -298,6 +480,7 @@ impl<'a> MediaFrame<'a> {
         }
     }
 
+    /// Returns a reference to the underlying FFI frame structure.
     fn raw(&self) -> &ffi::OMTMediaFrame {
         match &self.frame {
             MediaFrameInner::Owned(ref frame) => frame,
@@ -305,7 +488,17 @@ impl<'a> MediaFrame<'a> {
         }
     }
 
-    /// Returns the type of the frame (Video, Audio, Metadata, or None).
+    /// Returns the type of the frame.
+    ///
+    /// This determines which fields of the frame structure are valid and should be used.
+    ///
+    /// # Returns
+    ///
+    /// One of:
+    /// - `FrameType::Video`: Video frame with pixel data
+    /// - `FrameType::Audio`: Audio frame with sample data
+    /// - `FrameType::Metadata`: Metadata frame with XML string
+    /// - `FrameType::None`: No frame data
     pub fn frame_type(&self) -> crate::types::FrameType {
         self.raw().Type.into()
     }
@@ -318,10 +511,27 @@ impl<'a> MediaFrame<'a> {
         self.raw().Timestamp
     }
 
+    /// Returns the codec used for this frame.
+    ///
+    /// For video frames, this indicates the pixel format (UYVY, BGRA, VMX1, etc.).
+    /// For audio frames, this is always FPA1 (32-bit floating point planar audio).
+    /// For metadata frames, this field is not meaningful.
     pub fn codec(&self) -> Codec {
         Codec::from(self.raw().Codec)
     }
 
+    /// Returns the raw uncompressed data for this frame.
+    ///
+    /// # Data Contents
+    ///
+    /// - **Video frames**: Uncompressed pixel data (or compressed VMX1 data when sending with Codec set to VMX1)
+    /// - **Audio frames**: Planar 32-bit floating point audio data
+    /// - **Metadata frames**: UTF-8 encoded XML string with null terminator
+    ///
+    /// # Returns
+    ///
+    /// - `Some(&[u8])` containing the frame data
+    /// - `None` if no data is present or the data pointer is null
     pub fn raw_data(&self) -> Option<&[u8]> {
         let raw = self.raw();
         if raw.Data.is_null() || raw.DataLength <= 0 {
@@ -331,6 +541,19 @@ impl<'a> MediaFrame<'a> {
         Some(unsafe { std::slice::from_raw_parts(raw.Data as *const u8, len) })
     }
 
+    /// Returns the compressed video data (receive only).
+    ///
+    /// When receiving with `ReceiveFlags::IncludeCompressed` or `ReceiveFlags::CompressedOnly`
+    /// set, this field will contain the original compressed video frame in VMX1 format.
+    /// This can be muxed into an AVI or MOV file using FFmpeg or similar APIs.
+    ///
+    /// **Note**: This is only valid for received frames. When sending, use the standard
+    /// `Data` field for VMX1 frames.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(&[u8])` containing the compressed VMX1 data
+    /// - `None` if no compressed data is present, the pointer is null, or this is a sent frame
     pub fn compressed_data(&self) -> Option<&[u8]> {
         let raw = self.raw();
         if raw.CompressedData.is_null() || raw.CompressedLength <= 0 {
@@ -340,6 +563,16 @@ impl<'a> MediaFrame<'a> {
         Some(unsafe { std::slice::from_raw_parts(raw.CompressedData as *const u8, len) })
     }
 
+    /// Returns the per-frame metadata as a string slice.
+    ///
+    /// Per-frame metadata is carried alongside the video or audio payload and can contain
+    /// frame-specific information like timecodes, ancillary data, or custom metadata.
+    /// The metadata is UTF-8 encoded XML, limited to 65,536 bytes.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(&str)` containing the UTF-8 metadata (without null terminator)
+    /// - `None` if no frame metadata is present or the pointer is null
     pub fn frame_metadata(&self) -> Option<&str> {
         let raw = self.raw();
         if raw.FrameMetadata.is_null() || raw.FrameMetadataLength <= 0 {
@@ -443,10 +676,7 @@ impl<'a> MediaFrame<'a> {
     /// </AncillaryData>"#
     /// ).unwrap();
     /// ```
-    pub fn set_frame_metadata<S: AsRef<str>>(
-        &mut self,
-        metadata: S,
-    ) -> Result<&mut Self, OmtError> {
+    pub fn set_frame_metadata<S: AsRef<str>>(&mut self, metadata: S) -> Result<&mut Self, Error> {
         match &mut self.frame {
             MediaFrameInner::Owned(ref mut frame) => {
                 // Create null-terminated metadata bytes
@@ -463,7 +693,7 @@ impl<'a> MediaFrame<'a> {
                 Ok(self)
             }
             MediaFrameInner::Borrowed(_) => {
-                Err(OmtError::InvalidCString) // TODO: Add a better error variant
+                Err(Error::InvalidCString) // TODO: Add a better error variant
             }
         }
     }
@@ -516,7 +746,7 @@ impl<'a> MediaFrame<'a> {
     /// .set_frame_metadata("<chained>metadata</chained>").unwrap()
     /// .clear_frame_metadata().unwrap();
     /// ```
-    pub fn clear_frame_metadata(&mut self) -> Result<&mut Self, OmtError> {
+    pub fn clear_frame_metadata(&mut self) -> Result<&mut Self, Error> {
         match &mut self.frame {
             MediaFrameInner::Owned(ref mut frame) => {
                 // Clear the metadata string
@@ -529,7 +759,7 @@ impl<'a> MediaFrame<'a> {
                 Ok(self)
             }
             MediaFrameInner::Borrowed(_) => {
-                Err(OmtError::InvalidCString) // TODO: Add a better error variant
+                Err(Error::InvalidCString) // TODO: Add a better error variant
             }
         }
     }
@@ -538,32 +768,79 @@ impl<'a> MediaFrame<'a> {
 impl<'a> MediaFrame<'a> {
     // Methods for video frames
 
-    // Common accessor methods (work for both owned and borrowed frames)
-
+    /// Returns the video frame width in pixels.
+    ///
+    /// This is only meaningful for video frames.
     pub fn width(&self) -> i32 {
         self.raw().Width
     }
 
+    /// Returns the video frame height in pixels.
+    ///
+    /// This is only meaningful for video frames.
     pub fn height(&self) -> i32 {
         self.raw().Height
     }
 
+    /// Returns the stride (number of bytes per row of pixels).
+    ///
+    /// The stride represents the actual bytes per row, which may include padding.
+    /// Typical values:
+    /// - `width * 2` for UYVY/YUY2
+    /// - `width * 4` for BGRA
+    /// - `width` for planar formats
+    ///
+    /// This is only meaningful for video frames.
     pub fn stride(&self) -> i32 {
         self.raw().Stride
     }
 
+    /// Returns the video flags indicating frame properties.
+    ///
+    /// Flags can indicate whether the frame is interlaced, has an alpha channel,
+    /// uses premultiplied alpha, is a preview frame, or uses high bit depth.
+    ///
+    /// This is only meaningful for video frames.
     pub fn flags(&self) -> VideoFlags {
         self.raw().Flags.into()
     }
 
+    /// Returns the frame rate as a numerator/denominator pair.
+    ///
+    /// Frame rate is expressed in frames per second. For example:
+    /// - `(60, 1)` = 60 fps
+    /// - `(30000, 1001)` ≈ 29.97 fps
+    /// - `(25, 1)` = 25 fps
+    ///
+    /// # Returns
+    ///
+    /// A tuple of `(numerator, denominator)`.
+    ///
+    /// This is only meaningful for video frames.
     pub fn frame_rate(&self) -> (i32, i32) {
         (self.raw().FrameRateN, self.raw().FrameRateD)
     }
 
+    /// Returns the display aspect ratio.
+    ///
+    /// The aspect ratio is expressed as width/height. Common values:
+    /// - `1.77778` (16/9)
+    /// - `1.33333` (4/3)
+    /// - `2.35` (cinemascope)
+    ///
+    /// This is only meaningful for video frames.
     pub fn aspect_ratio(&self) -> f32 {
         self.raw().AspectRatio
     }
 
+    /// Returns the color space of the video frame.
+    ///
+    /// The color space determines how YUV values are converted to RGB. Common values:
+    /// - `ColorSpace::BT709`: HDTV standard (1920x1080 and above)
+    /// - `ColorSpace::BT601`: SDTV standard (SD resolution)
+    /// - `ColorSpace::Undefined`: Color space not specified
+    ///
+    /// This is only meaningful for video frames.
     pub fn color_space(&self) -> ColorSpace {
         self.raw().ColorSpace.into()
     }
@@ -701,6 +978,19 @@ impl<'a> MediaFrame<'a> {
 }
 impl<'a> MediaFrame<'a> {
     // Conversion Methods for metadata frames
+
+    /// Returns the metadata frame content as a string slice.
+    ///
+    /// For metadata frames, this returns the UTF-8 encoded XML string (without null terminator).
+    /// This is equivalent to calling [`raw_data()`](MediaFrame::raw_data) and converting to a string,
+    /// but more convenient for metadata frames.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(&str)` containing the UTF-8 XML metadata
+    /// - `None` if no data is present or the pointer is null
+    ///
+    /// This is only meaningful for metadata frames.
     pub fn xml_data(&self) -> Option<&str> {
         let raw = self.raw();
         if raw.Data.is_null() || raw.DataLength <= 0 {

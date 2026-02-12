@@ -1,7 +1,7 @@
 use log::{error, info};
 use omt::{
-    fourcc_to_string, helpers::discover_addresses, FrameType, PreferredVideoFormat, ReceiveFlags,
-    Receiver, Timeout, VideoFlags,
+    helpers::discover_addresses, FrameType, PreferredVideoFormat, ReceiveFlags, Receiver, Timeout,
+    VideoFlags,
 };
 use std::env;
 
@@ -54,7 +54,7 @@ fn main() {
         // Fetch a single sample frame.
         match receiver.receive(FrameType::Video, Timeout::from_millis(1000)) {
             Ok(Some(frame)) => {
-                let codec = fourcc_to_string(frame.codec().fourcc());
+                let codec = frame.codec().fourcc_string();
                 let flags = describe_video_flags(frame.flags());
                 let (fr_n, fr_d) = frame.frame_rate();
 

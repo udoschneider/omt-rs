@@ -2,139 +2,163 @@
 //!
 //! A receiver connects to a published sender and pulls video/audio/metadata
 //! over the OMT TCP transport. The address is typically discovered via DNS-SD
-//! (Bonjour/Avahi) or a discovery server (as described by `libomt.h`).
+//! (Bonjour/Avahi) or using [`crate::discovery`] to get a list of available
+//! sources on the network.
+//!
+//! # Address Format
+//!
+//! The address parameter can be:
+//! - The full name provided by OMT Discovery (e.g., "HOST (Sender Name)")
+//! - A URL in the format `omt://hostname:port`
+//!
+//! # Frame Lifetime
+//!
+//! Frames returned by [`Receiver::receive`] are valid only until the next
+//! call to `receive` for that instance and frame type. This matches the
+//! underlying `omt_receive` behavior in `libomt.h`. Pointers within frames
+//! do not need to be freed by the caller.
+//!
+//! # Threading
+//!
+//! Make sure any threads currently accessing receiver functions are properly
+//! closed before dropping the receiver instance.
+//!
 //! See <https://github.com/openmediatransport> for protocol background.
 
+pub use crate::types::Tally;
+
 use crate::ffi;
-use crate::ffi_utils::c_char_array_to_string;
 use crate::media_frame::MediaFrame;
-use crate::types::{Address, FrameType, PreferredVideoFormat, Quality, ReceiveFlags, Timeout};
-use crate::OmtError;
+use crate::types::{
+    Address, FrameType, PreferredVideoFormat, Quality, ReceiveFlags, SenderInfo, Statistics,
+    Timeout,
+};
+use crate::Error;
 use std::ffi::CString;
 use std::ptr::NonNull;
 
-#[derive(Clone, Debug, Default)]
-/// On-air tally state reported by the sender (preview/program).
-pub struct Tally {
-    pub preview: bool,
-    pub program: bool,
-}
-
-#[derive(Clone, Debug, Default)]
-/// Optional metadata describing the sender device/software.
-pub struct SenderInfo {
-    pub product_name: String,
-    pub manufacturer: String,
-    pub version: String,
-    pub reserved1: String,
-    pub reserved2: String,
-    pub reserved3: String,
-}
-
-impl SenderInfo {
-    /// Converts this `SenderInfo` to the FFI representation.
-    pub(crate) fn to_ffi(&self) -> ffi::OMTSenderInfo {
-        use crate::ffi_utils::write_c_char_array;
-
-        let mut raw = ffi::OMTSenderInfo {
-            ProductName: [0; ffi::OMT_MAX_STRING_LENGTH],
-            Manufacturer: [0; ffi::OMT_MAX_STRING_LENGTH],
-            Version: [0; ffi::OMT_MAX_STRING_LENGTH],
-            Reserved1: [0; ffi::OMT_MAX_STRING_LENGTH],
-            Reserved2: [0; ffi::OMT_MAX_STRING_LENGTH],
-            Reserved3: [0; ffi::OMT_MAX_STRING_LENGTH],
-        };
-
-        write_c_char_array(&mut raw.ProductName, &self.product_name);
-        write_c_char_array(&mut raw.Manufacturer, &self.manufacturer);
-        write_c_char_array(&mut raw.Version, &self.version);
-        write_c_char_array(&mut raw.Reserved1, &self.reserved1);
-        write_c_char_array(&mut raw.Reserved2, &self.reserved2);
-        write_c_char_array(&mut raw.Reserved3, &self.reserved3);
-
-        raw
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-/// Transport and codec statistics for audio or video streams.
-pub struct Statistics {
-    pub bytes_sent: i64,
-    pub bytes_received: i64,
-    pub bytes_sent_since_last: i64,
-    pub bytes_received_since_last: i64,
-    pub frames: i64,
-    pub frames_since_last: i64,
-    pub frames_dropped: i64,
-    pub codec_time: i64,
-    pub codec_time_since_last: i64,
-    pub reserved1: i64,
-    pub reserved2: i64,
-    pub reserved3: i64,
-    pub reserved4: i64,
-    pub reserved5: i64,
-    pub reserved6: i64,
-    pub reserved7: i64,
-}
-
-fn sender_info_from_ffi(info: &ffi::OMTSenderInfo) -> Option<SenderInfo> {
-    let product_name = c_char_array_to_string(&info.ProductName[..]);
-    let manufacturer = c_char_array_to_string(&info.Manufacturer[..]);
-    let version = c_char_array_to_string(&info.Version[..]);
-    let reserved1 = c_char_array_to_string(&info.Reserved1[..]);
-    let reserved2 = c_char_array_to_string(&info.Reserved2[..]);
-    let reserved3 = c_char_array_to_string(&info.Reserved3[..]);
-
-    let has_any = !product_name.is_empty()
-        || !manufacturer.is_empty()
-        || !version.is_empty()
-        || !reserved1.is_empty()
-        || !reserved2.is_empty()
-        || !reserved3.is_empty();
-
-    if has_any {
-        Some(SenderInfo {
-            product_name,
-            manufacturer,
-            version,
-            reserved1,
-            reserved2,
-            reserved3,
-        })
-    } else {
-        None
-    }
-}
-
-fn tally_to_ffi(tally: &Tally) -> ffi::OMTTally {
-    ffi::OMTTally {
-        preview: if tally.preview { 1 } else { 0 },
-        program: if tally.program { 1 } else { 0 },
-    }
-}
-
-/// High-level receiver handle. Drops cleanly by releasing the native instance.
+/// High-level receiver handle for connecting to OMT senders.
+///
+/// A `Receiver` connects to a sender at a specified address and receives
+/// video, audio, and/or metadata frames. The receiver maintains a connection
+/// to the sender and buffers incoming frames.
+///
+/// # Thread Safety
+///
+/// `Receiver` is `Send` and `Sync`, allowing it to be used across threads.
+/// However, ensure proper synchronization when calling methods from multiple threads.
+///
+/// # Cleanup
+///
+/// The receiver automatically disconnects and cleans up resources when dropped.
+/// Make sure any threads accessing receiver functions are closed before the
+/// receiver is dropped.
+///
+/// # Examples
+///
+/// ## Basic video reception
+///
+/// ```no_run
+/// use omt::{Receiver, Address, FrameType, PreferredVideoFormat, ReceiveFlags, Timeout};
+///
+/// let address = Address::new("HOST (My Sender)");
+/// let mut receiver = Receiver::create(
+///     &address,
+///     FrameType::Video,
+///     PreferredVideoFormat::UYVYorBGRA,
+///     ReceiveFlags::NONE,
+/// ).unwrap();
+///
+/// loop {
+///     if let Ok(Some(frame)) = receiver.receive(FrameType::Video, Timeout::from_millis(1000)) {
+///         println!("Received {}x{} video frame", frame.width(), frame.height());
+///     }
+/// }
+/// ```
+///
+/// ## Receiving multiple frame types
+///
+/// ```no_run
+/// use omt::{Receiver, Address, FrameType, PreferredVideoFormat, ReceiveFlags, Timeout};
+///
+/// # let address = Address::new("HOST (My Sender)");
+/// let mut receiver = Receiver::create(
+///     &address,
+///     FrameType::Video,
+///     PreferredVideoFormat::UYVYorBGRA,
+///     ReceiveFlags::NONE,
+/// ).unwrap();
+///
+/// // Receive all frame types in a single thread
+/// if let Ok(Some(frame)) = receiver.receive(
+///     FrameType::Video,
+///     Timeout::from_millis(100)
+/// ) {
+///     match frame.frame_type() {
+///         FrameType::Video => println!("Got video"),
+///         FrameType::Audio => println!("Got audio"),
+///         FrameType::Metadata => println!("Got metadata"),
+///         _ => {}
+///     }
+/// }
+/// ```
 pub struct Receiver {
     handle: NonNull<ffi::omt_receive_t>,
 }
 
-unsafe impl Send for Receiver {}
-unsafe impl Sync for Receiver {}
-
 impl Receiver {
-    /// Connects to a sender address and creates a receiver instance.
+    /// Creates a new receiver and begins connecting to the sender at the specified address.
     ///
-    /// `address` uses the `Address` newtype to distinguish sender addresses from other strings.
-    /// `frame_types` selects which streams to receive, `format` controls the
-    /// preferred pixel formats, and `flags` toggles optional behaviors such as
-    /// preview or compressed delivery.
+    /// # Parameters
+    ///
+    /// - `address`: Address to connect to, either:
+    ///   - The full name provided by OMT Discovery (e.g., "HOST (Sender Name)")
+    ///   - A URL in the format `omt://hostname:port`
+    /// - `frame_types`: Specifies which types of frames to receive (e.g., video only, audio only, or combinations)
+    /// - `format`: Preferred uncompressed video format. `UYVYorBGRA` will only receive BGRA frames when an alpha channel is present
+    /// - `flags`: Optional flags such as:
+    ///   - `Preview`: Request preview feed only
+    ///   - `IncludeCompressed`: Include compressed (VMX) data with each frame for further processing or recording
+    ///   - `CompressedOnly`: Receive only compressed data without decoding
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(Receiver)` on successful connection, or `Err(Error)` if the connection fails.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::{Receiver, Address, FrameType, PreferredVideoFormat, ReceiveFlags};
+    ///
+    /// // Connect to a sender discovered via discovery
+    /// let address = Address::new("HOST (My Camera)");
+    /// let receiver = Receiver::create(
+    ///     &address,
+    ///     FrameType::Video,
+    ///     PreferredVideoFormat::UYVYorBGRA,
+    ///     ReceiveFlags::NONE,
+    /// ).unwrap();
+    /// ```
+    ///
+    /// ```no_run
+    /// use omt::{Receiver, Address, FrameType, PreferredVideoFormat, ReceiveFlags};
+    ///
+    /// // Connect via direct URL
+    /// let address = Address::new("omt://192.168.1.100:8001");
+    /// let receiver = Receiver::create(
+    ///     &address,
+    ///     FrameType::Video,
+    ///     PreferredVideoFormat::UYVY,
+    ///     ReceiveFlags::PREVIEW,
+    /// ).unwrap();
+    /// ```
     pub fn create(
         address: &Address,
         frame_types: FrameType,
         format: PreferredVideoFormat,
         flags: ReceiveFlags,
-    ) -> Result<Self, OmtError> {
-        let c_address = CString::new(address.as_str()).map_err(|_| OmtError::InvalidCString)?;
+    ) -> Result<Self, Error> {
+        let c_address = CString::new(address.as_str()).map_err(|_| Error::InvalidCString)?;
         let handle = unsafe {
             ffi::omt_receive_create(
                 c_address.as_ptr(),
@@ -143,19 +167,38 @@ impl Receiver {
                 i32::from(flags),
             )
         };
-        let handle = NonNull::new(handle).ok_or(OmtError::NullHandle)?;
+        let handle = NonNull::new(handle).ok_or(Error::NullHandle)?;
         Ok(Self { handle })
     }
 
-    /// Receives the next frame of the requested type within the timeout.
+    /// Receives any available frames in the buffer, or waits for frames if empty.
     ///
-    /// Call this in a loop to drive continuous receive since the iterator API
-    /// was removed.
+    /// # Parameters
     ///
-    /// Returned frames are valid until the next `receive` call on this receiver
-    /// (matching the `libomt.h` lifetime rules for `omt_receive`). Timestamps are
-    /// in OMT ticks (10,000,000 per second). Metadata frames carry UTF-8 XML with
-    /// a terminating null byte.
+    /// - `frame_types`: The frame types to receive. Set multiple types to receive them all in a single thread.
+    ///   Set individually if using separate threads for audio/video/metadata.
+    /// - `timeout`: The maximum time to wait for a new frame if the buffer is empty
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Some(MediaFrame))` if a frame was received
+    /// - `Ok(None)` if the operation timed out
+    /// - `Err(Error)` on error
+    ///
+    /// # Frame Lifetime
+    ///
+    /// **IMPORTANT**: The data in the returned frame is valid only until the next call to `receive`
+    /// for this instance and frame type. Pointers within the frame do not need to be freed by the caller.
+    ///
+    /// # Timestamps
+    ///
+    /// Frame timestamps are in OMT ticks where 1 second = 10,000,000 ticks. Timestamps represent
+    /// the accurate time the frame or audio sample was generated at the original source and should
+    /// be used on the receiving end to synchronize and record to file as a presentation timestamp (PTS).
+    ///
+    /// # Metadata Format
+    ///
+    /// Metadata frames carry UTF-8 XML data with a terminating null byte.
     ///
     /// # Examples
     ///
@@ -194,7 +237,7 @@ impl Receiver {
         &mut self,
         frame_types: FrameType,
         timeout: Timeout,
-    ) -> Result<Option<MediaFrame<'_>>, OmtError> {
+    ) -> Result<Option<MediaFrame<'_>>, Error> {
         let frame_ptr = unsafe {
             ffi::omt_receive(
                 self.handle.as_ptr(),
@@ -205,15 +248,27 @@ impl Receiver {
         if frame_ptr.is_null() {
             Ok(None)
         } else {
-            Ok(Some(MediaFrame::new(unsafe { &*frame_ptr })))
+            Ok(Some(unsafe { &*frame_ptr }.into()))
         }
     }
 
-    /// Sends a metadata frame back to the sender (bi-directional metadata channel).
+    /// Sends a metadata frame to the sender (bi-directional metadata channel).
     ///
-    /// The frame should be a metadata frame created with `MediaFrame::metadata()`.
+    /// This function only supports metadata frames. Use this for sending commands, status updates,
+    /// or other control information to the sender.
+    ///
+    /// # Parameters
+    ///
+    /// - `frame`: A metadata frame created with [`crate::media_frame::MediaFrame::metadata`]
+    ///
+    /// # Returns
+    ///
+    /// Returns the result code from the underlying send operation.
+    ///
+    /// # Notes
+    ///
     /// If a non-metadata frame is passed, a warning will be logged and the frame
-    /// type will be used as-is.
+    /// type will be used as-is, but this is not recommended.
     ///
     /// # Examples
     ///
@@ -231,7 +286,7 @@ impl Receiver {
     /// ).unwrap();
     ///
     /// let mut metadata = MediaFrame::metadata("<status>ready</status>", -1).unwrap();
-    /// receiver.send_metadata(&mut metadata).unwrap();
+    /// receiver.send(&mut metadata).unwrap();
     /// ```
     ///
     /// ## Send PTZ command
@@ -246,14 +301,14 @@ impl Receiver {
     ///     r#"<OMTPTZ Protocol="VISCA" Sequence="22" Command="8101040700FF" />"#,
     ///     -1
     /// ).unwrap();
-    /// receiver.send_metadata(&mut ptz_cmd).unwrap();
+    /// receiver.send(&mut ptz_cmd).unwrap();
     /// ```
-    pub fn send_metadata(&self, frame: &mut MediaFrame) -> Result<i32, OmtError> {
+    pub fn send(&self, frame: &mut MediaFrame) -> Result<i32, Error> {
         // Check if frame is a metadata frame and log warning if not
         let frame_ref = frame.as_mut();
         if frame_ref.Type != ffi::OMTFrameType::Metadata {
             log::warn!(
-                "Receiver::send_metadata called with non-metadata frame type: {:?}. Expected OMTFrameType::Metadata.",
+                "Receiver::send called with non-metadata frame type: {:?}. Expected OMTFrameType::Metadata.",
                 frame_ref.Type
             );
         }
@@ -262,13 +317,65 @@ impl Receiver {
         Ok(result as i32)
     }
 
-    /// Sets preview/program tally state for this receiver.
+    /// Sets the preview/program tally state for this receiver.
+    ///
+    /// Informs the sender about this receiver's tally status. The sender aggregates
+    /// tally information from all connected receivers.
+    ///
+    /// # Parameters
+    ///
+    /// - `tally`: Tally state with `preview` and `program` boolean flags
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::{Receiver, Tally, Address, FrameType, PreferredVideoFormat, ReceiveFlags};
+    ///
+    /// # let address = Address::new("HOST (Sender)");
+    /// # let receiver = Receiver::create(&address, FrameType::Video, PreferredVideoFormat::UYVYorBGRA, ReceiveFlags::NONE).unwrap();
+    /// let tally = Tally {
+    ///     preview: true,
+    ///     program: false,
+    /// };
+    /// receiver.set_tally(&tally);
+    /// ```
     pub fn set_tally(&self, tally: &Tally) {
-        let mut raw = tally_to_ffi(tally);
+        let mut raw: ffi::OMTTally = tally.into();
         unsafe { ffi::omt_receive_settally(self.handle.as_ptr(), &mut raw) };
     }
 
-    /// Retrieves tally state updates from the sender.
+    /// Receives the current aggregated tally state across all connections to the sender.
+    ///
+    /// This returns the tally state across **all** receivers connected to the sender,
+    /// not just this receiver's tally state.
+    ///
+    /// # Parameters
+    ///
+    /// - `timeout`: Maximum time to wait for tally updates
+    /// - `tally`: Mutable reference to store the received tally state
+    ///
+    /// # Returns
+    ///
+    /// - `0` if timed out or tally didn't change
+    /// - `1` if new tally state was received
+    ///
+    /// # Notes
+    ///
+    /// If this function times out, the last known tally state will be stored in `tally`.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::{Receiver, Tally, Timeout, Address, FrameType, PreferredVideoFormat, ReceiveFlags};
+    ///
+    /// # let address = Address::new("HOST (Sender)");
+    /// # let receiver = Receiver::create(&address, FrameType::Video, PreferredVideoFormat::UYVYorBGRA, ReceiveFlags::NONE).unwrap();
+    /// let mut tally = Tally::default();
+    /// let result = receiver.get_tally(Timeout::from_millis(100), &mut tally);
+    /// if result == 1 {
+    ///     println!("Tally updated: preview={}, program={}", tally.preview, tally.program);
+    /// }
+    /// ```
     pub fn get_tally(&self, timeout: Timeout, tally: &mut Tally) -> i32 {
         let mut raw = ffi::OMTTally {
             preview: 0,
@@ -282,20 +389,66 @@ impl Receiver {
         result
     }
 
-    /// Updates receiver flags (e.g., preview or compressed stream delivery).
+    /// Changes the flags on the current receive instance.
+    ///
+    /// This allows dynamic switching between preview mode and other receive behaviors.
+    /// Changes will apply from the next frame received.
+    ///
+    /// # Parameters
+    ///
+    /// - `flags`: New receiver flags (e.g., `Preview`, `IncludeCompressed`, `CompressedOnly`)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::{Receiver, ReceiveFlags, Address, FrameType, PreferredVideoFormat};
+    ///
+    /// # let address = Address::new("HOST (Sender)");
+    /// # let receiver = Receiver::create(&address, FrameType::Video, PreferredVideoFormat::UYVYorBGRA, ReceiveFlags::NONE).unwrap();
+    /// // Switch to preview mode dynamically
+    /// receiver.set_flags(ReceiveFlags::PREVIEW);
+    /// ```
     pub fn set_flags(&self, flags: ReceiveFlags) {
         unsafe { ffi::omt_receive_setflags(self.handle.as_ptr(), i32::from(flags)) };
     }
 
-    /// Suggests a preferred quality to the sender when it is in Default mode.
+    /// Informs the sender of the quality preference for this receiver.
+    ///
+    /// # Quality Modes
+    ///
+    /// - `Quality::Default`: This receiver defers quality to whatever is set amongst other receivers
+    /// - `Quality::Low`, `Quality::Medium`, `Quality::High`: Specific quality preferences
+    ///
+    /// If the sender is set to `Default` mode, it will allow quality suggestions from all receivers
+    /// and select the highest suggested quality amongst them.
+    ///
+    /// # Parameters
+    ///
+    /// - `quality`: The preferred quality level for this receiver
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::{Receiver, Quality, Address, FrameType, PreferredVideoFormat, ReceiveFlags};
+    ///
+    /// # let address = Address::new("HOST (Sender)");
+    /// # let receiver = Receiver::create(&address, FrameType::Video, PreferredVideoFormat::UYVYorBGRA, ReceiveFlags::NONE).unwrap();
+    /// // Request high quality encoding
+    /// receiver.set_suggested_quality(Quality::High);
+    /// ```
     pub fn set_suggested_quality(&self, quality: Quality) {
         unsafe { ffi::omt_receive_setsuggestedquality(self.handle.as_ptr(), quality.into()) };
     }
 
-    /// Fetches optional metadata about the connected sender.
+    /// Retrieves optional information describing the sender.
     ///
-    /// Returns sender device/software information if available, including product name,
-    /// manufacturer, and version.
+    /// This information is valid only when connected. Returns `None` if disconnected
+    /// or if no sender information was provided by the sender.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(SenderInfo)` containing product name, manufacturer, and version if available
+    /// - `None` if not connected or sender didn't provide information
     ///
     /// # Examples
     ///
@@ -319,26 +472,67 @@ impl Receiver {
     /// }
     /// ```
     pub fn get_sender_info(&self) -> Option<SenderInfo> {
+        use std::os::raw::c_char;
         let mut info = ffi::OMTSenderInfo {
-            ProductName: [0; ffi::OMT_MAX_STRING_LENGTH],
-            Manufacturer: [0; ffi::OMT_MAX_STRING_LENGTH],
-            Version: [0; ffi::OMT_MAX_STRING_LENGTH],
-            Reserved1: [0; ffi::OMT_MAX_STRING_LENGTH],
-            Reserved2: [0; ffi::OMT_MAX_STRING_LENGTH],
-            Reserved3: [0; ffi::OMT_MAX_STRING_LENGTH],
+            ProductName: [0 as c_char; ffi::OMT_MAX_STRING_LENGTH],
+            Manufacturer: [0 as c_char; ffi::OMT_MAX_STRING_LENGTH],
+            Version: [0 as c_char; ffi::OMT_MAX_STRING_LENGTH],
+            Reserved1: [0 as c_char; ffi::OMT_MAX_STRING_LENGTH],
+            Reserved2: [0 as c_char; ffi::OMT_MAX_STRING_LENGTH],
+            Reserved3: [0 as c_char; ffi::OMT_MAX_STRING_LENGTH],
         };
         unsafe { ffi::omt_receive_getsenderinformation(self.handle.as_ptr(), &mut info) };
-        sender_info_from_ffi(&info)
+        Option::<SenderInfo>::from(&info)
     }
 
-    /// Returns video stream statistics for this receiver.
+    /// Retrieves video stream statistics for this receiver.
+    ///
+    /// Statistics include byte counts, frame counts, codec timing, and deltas since
+    /// the last statistics query.
+    ///
+    /// # Returns
+    ///
+    /// A [`Statistics`] struct containing video stream metrics.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::{Receiver, Address, FrameType, PreferredVideoFormat, ReceiveFlags};
+    ///
+    /// # let address = Address::new("HOST (Sender)");
+    /// # let receiver = Receiver::create(&address, FrameType::Video, PreferredVideoFormat::UYVYorBGRA, ReceiveFlags::NONE).unwrap();
+    /// let stats = receiver.get_video_statistics();
+    /// println!("Received {} frames, {} bytes", stats.frames, stats.bytes_received);
+    /// if stats.frames > 0 {
+    ///     let avg_codec_time = stats.codec_time as f64 / stats.frames as f64;
+    ///     println!("Average codec time: {:.2}ms per frame", avg_codec_time);
+    /// }
+    /// ```
     pub fn get_video_statistics(&self) -> Statistics {
         let mut stats = unsafe { std::mem::zeroed::<ffi::OMTStatistics>() };
         unsafe { ffi::omt_receive_getvideostatistics(self.handle.as_ptr(), &mut stats) };
         Statistics::from(&stats)
     }
 
-    /// Returns audio stream statistics for this receiver.
+    /// Retrieves audio stream statistics for this receiver.
+    ///
+    /// Statistics include byte counts, frame counts, codec timing, and deltas since
+    /// the last statistics query.
+    ///
+    /// # Returns
+    ///
+    /// A [`Statistics`] struct containing audio stream metrics.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::{Receiver, Address, FrameType, PreferredVideoFormat, ReceiveFlags};
+    ///
+    /// # let address = Address::new("HOST (Sender)");
+    /// # let receiver = Receiver::create(&address, FrameType::Audio, PreferredVideoFormat::UYVYorBGRA, ReceiveFlags::NONE).unwrap();
+    /// let stats = receiver.get_audio_statistics();
+    /// println!("Received {} audio frames, {} bytes", stats.frames, stats.bytes_received);
+    /// ```
     pub fn get_audio_statistics(&self) -> Statistics {
         let mut stats = unsafe { std::mem::zeroed::<ffi::OMTStatistics>() };
         unsafe { ffi::omt_receive_getaudiostatistics(self.handle.as_ptr(), &mut stats) };
@@ -351,6 +545,9 @@ impl Drop for Receiver {
         unsafe { ffi::omt_receive_destroy(self.handle.as_ptr()) };
     }
 }
+
+unsafe impl Send for Receiver {}
+unsafe impl Sync for Receiver {}
 
 #[cfg(test)]
 mod tests {
@@ -379,7 +576,7 @@ mod tests {
         let mut metadata = MediaFrame::metadata("<test>data</test>", -1).unwrap();
 
         // This should work without warnings (though it may fail if no sender is connected)
-        let _ = receiver.send_metadata(&mut metadata);
+        let _ = receiver.send(&mut metadata);
     }
 
     #[test]
@@ -417,7 +614,7 @@ mod tests {
 
         // This should log a warning but not fail
         // (The actual send may fail if no sender is connected, but that's okay for this test)
-        let _ = receiver.send_metadata(&mut video_frame);
+        let _ = receiver.send(&mut video_frame);
         // The warning will be logged but we can't easily assert on log output in this test
     }
 }

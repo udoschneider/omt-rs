@@ -7,9 +7,8 @@
 
 use crate::ffi;
 use crate::media_frame::MediaFrame;
-use crate::receiver::{SenderInfo, Statistics, Tally};
-use crate::types::{Address, Name, Quality, Timeout};
-use crate::OmtError;
+use crate::types::{Address, Name, Quality, SenderInfo, Statistics, Tally, Timeout};
+use crate::Error;
 use std::ffi::CString;
 use std::ptr::NonNull;
 
@@ -18,26 +17,70 @@ pub struct Sender {
     handle: NonNull<ffi::omt_send_t>,
 }
 
-unsafe impl Send for Sender {}
-unsafe impl Sync for Sender {}
-
 impl Sender {
-    /// Creates a new sender and publishes it on the network.
+    /// Creates a new instance of the OMT Sender and publishes it on the network.
     ///
-    /// When `quality` is `Default`, receivers can suggest a preferred quality.
-    pub fn create(name: &Name, quality: Quality) -> Result<Self, OmtError> {
-        let c_name = CString::new(name.as_str()).map_err(|_| OmtError::InvalidCString)?;
+    /// # Parameters
+    ///
+    /// * `name` - The name of the source (not including hostname)
+    /// * `quality` - The quality to use for video encoding. If `Quality::Default`, this can be
+    ///   automatically adjusted based on receiver requirements.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::InvalidCString` if the name contains null bytes.
+    /// Returns `Error::NullHandle` if the underlying C library fails to create the sender.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::{Sender, Name, Quality};
+    ///
+    /// // Create sender with default quality (can be adjusted by receivers)
+    /// let name = Name::new("Camera 1");
+    /// let sender = Sender::create(&name, Quality::Default).unwrap();
+    /// ```
+    ///
+    /// ```no_run
+    /// use omt::{Sender, Name, Quality};
+    ///
+    /// // Create sender with fixed high quality
+    /// let name = Name::new("Studio Camera");
+    /// let sender = Sender::create(&name, Quality::High).unwrap();
+    /// ```
+    pub fn create(name: &Name, quality: Quality) -> Result<Self, Error> {
+        let c_name = CString::new(name.as_str()).map_err(|_| Error::InvalidCString)?;
         let handle = unsafe { ffi::omt_send_create(c_name.as_ptr(), quality.into()) };
-        let handle = NonNull::new(handle).ok_or(OmtError::NullHandle)?;
+        let handle = NonNull::new(handle).ok_or(Error::NullHandle)?;
         Ok(Self { handle })
     }
 
+    /// Optionally sets information describing the sender.
+    ///
+    /// This allows you to provide metadata about the sender such as product name,
+    /// manufacturer, and version information that receivers can query.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::{Sender, Name, Quality, SenderInfo};
+    ///
+    /// let name = Name::new("Camera 1");
+    /// let sender = Sender::create(&name, Quality::Default).unwrap();
+    ///
+    /// let info = SenderInfo::new()
+    ///     .with_product_name("Professional Camera")
+    ///     .with_manufacturer("ACME Corp")
+    ///     .with_version("1.0.0");
+    ///
+    /// sender.set_sender_info(&info);
+    /// ```
     pub fn set_sender_info(&self, info: &SenderInfo) {
-        let mut raw = info.to_ffi();
+        let mut raw = ffi::OMTSenderInfo::from(info);
         unsafe { ffi::omt_send_setsenderinformation(self.handle.as_ptr(), &mut raw) };
     }
 
-    /// Adds connection-level metadata (applies to new connections).
+    /// Adds to the list of metadata that is sent immediately upon a new connection by a receiver.
     ///
     /// This metadata is sent immediately upon a new connection by a receiver, and is also
     /// sent to any currently connected receivers. Metadata should be UTF-8 encoded XML.
@@ -96,8 +139,8 @@ impl Sender {
     ///     r#"<OMTPTZ Protocol="VISCAoverIP" URL="visca://192.168.1.100:52381" />"#
     /// ).unwrap();
     /// ```
-    pub fn add_connection_metadata<S: AsRef<str>>(&self, metadata: S) -> Result<(), OmtError> {
-        let c_meta = CString::new(metadata.as_ref()).map_err(|_| OmtError::InvalidCString)?;
+    pub fn add_connection_metadata<S: AsRef<str>>(&self, metadata: S) -> Result<(), Error> {
+        let c_meta = CString::new(metadata.as_ref()).map_err(|_| Error::InvalidCString)?;
         unsafe { ffi::omt_send_addconnectionmetadata(self.handle.as_ptr(), c_meta.as_ptr()) };
         Ok(())
     }
@@ -121,11 +164,38 @@ impl Sender {
         unsafe { ffi::omt_send_clearconnectionmetadata(self.handle.as_ptr()) };
     }
 
-    /// Redirects receivers to a new address, or clears the redirect when `None`.
-    pub fn set_redirect(&self, new_address: Option<&Address>) -> Result<(), OmtError> {
+    /// Redirects receivers to connect to a different address.
+    ///
+    /// This is used to create a "virtual source" that can be dynamically switched as needed.
+    /// This is useful for scenarios where a receiver needs to be changed remotely.
+    ///
+    /// # Parameters
+    ///
+    /// * `new_address` - The new address to redirect to, or `None` to disable redirect
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error::InvalidCString` if the address contains null bytes.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::{Sender, Name, Quality, Address};
+    ///
+    /// let name = Name::new("Virtual Camera");
+    /// let sender = Sender::create(&name, Quality::Default).unwrap();
+    ///
+    /// // Redirect to a different camera
+    /// let new_addr = Address::from("camera2.local");
+    /// sender.set_redirect(Some(&new_addr)).unwrap();
+    ///
+    /// // Clear redirect
+    /// sender.set_redirect(None).unwrap();
+    /// ```
+    pub fn set_redirect(&self, new_address: Option<&Address>) -> Result<(), Error> {
         match new_address {
             Some(addr) => {
-                let c_addr = CString::new(addr.as_str()).map_err(|_| OmtError::InvalidCString)?;
+                let c_addr = CString::new(addr.as_str()).map_err(|_| Error::InvalidCString)?;
                 unsafe { ffi::omt_send_setredirect(self.handle.as_ptr(), c_addr.as_ptr()) };
             }
             None => unsafe { ffi::omt_send_setredirect(self.handle.as_ptr(), std::ptr::null()) },
@@ -133,7 +203,27 @@ impl Sender {
         Ok(())
     }
 
-    /// Returns the published sender address as `Address`, if available.
+    /// Retrieves the discovery address in the format "HOSTNAME (NAME)".
+    ///
+    /// Returns the sender's published address that receivers use for discovery.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(Address)` containing the UTF-8 encoded discovery address,
+    /// or `None` if the address could not be retrieved.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::{Sender, Name, Quality};
+    ///
+    /// let name = Name::new("Camera 1");
+    /// let sender = Sender::create(&name, Quality::Default).unwrap();
+    ///
+    /// if let Some(address) = sender.get_address() {
+    ///     println!("Sender published at: {}", address.as_str());
+    /// }
+    /// ```
     pub fn get_address(&self) -> Option<Address> {
         let mut buf = vec![0u8; ffi::OMT_MAX_STRING_LENGTH];
         let len = unsafe {
@@ -150,38 +240,134 @@ impl Sender {
         Some(Address::from(cstr.to_string_lossy().to_string()))
     }
 
-    /// Sends a prepared frame (video or metadata) to all connected receivers.
+    /// Sends a frame to all currently connected receivers.
+    ///
+    /// # Supported Formats
+    ///
+    /// * **Video**: `UYVY`, `YUY2`, `NV12`, `YV12`, `BGRA`, `UYVA`, `VMX1`
+    ///   - Note: `BGRA` will be treated as `BGRX` and `UYVA` as `UYVY` where alpha flags are not set
+    /// * **Audio**: Planar 32-bit floating point audio
+    /// * **Metadata**: UTF-8 encoded XML
+    ///
+    /// # Returns
+    ///
+    /// Returns the number of bytes sent, or a negative value on error.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::{Sender, Name, Quality, MediaFrame};
+    ///
+    /// let name = Name::new("Camera 1");
+    /// let sender = Sender::create(&name, Quality::Default).unwrap();
+    ///
+    /// // Send a video frame (assuming frame is prepared)
+    /// // let mut frame = MediaFrame::new_video(...);
+    /// // let bytes_sent = sender.send(&mut frame);
+    /// ```
     pub fn send(&self, frame: &mut MediaFrame) -> i32 {
         unsafe { ffi::omt_send(self.handle.as_ptr(), frame.as_mut()) as i32 }
     }
 
-    /// Returns the current number of connected receivers.
+    /// Returns the total number of connections to this sender.
+    ///
+    /// Note: Receivers establish one connection for video/metadata and a second for audio,
+    /// so the connection count may be twice the number of actual receivers.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::{Sender, Name, Quality};
+    ///
+    /// let name = Name::new("Camera 1");
+    /// let sender = Sender::create(&name, Quality::Default).unwrap();
+    ///
+    /// let conn_count = sender.connections();
+    /// println!("Connected: {} connections", conn_count);
+    /// ```
     pub fn connections(&self) -> i32 {
         unsafe { ffi::omt_send_connections(self.handle.as_ptr()) as i32 }
     }
 
-    /// Receives metadata sent from receivers within the timeout.
+    /// Receives any available metadata from the buffer, or waits if empty.
     ///
-    /// Call this in a loop to drive continuous receive since the iterator API
-    /// was removed.
+    /// This function receives metadata sent from connected receivers. If metadata
+    /// is available in the buffer, it returns immediately. Otherwise, it waits up
+    /// to the specified timeout for metadata to arrive.
     ///
-    /// Returned frames are valid until the next receive call on this sender
-    /// (matching the `libomt.h` lifetime rules for `omt_send_receive`). The
-    /// metadata payload is UTF-8 XML with a terminating null byte.
-    pub fn receive_metadata(
-        &mut self,
-        timeout: Timeout,
-    ) -> Result<Option<MediaFrame<'_>>, OmtError> {
+    /// # Lifetime
+    ///
+    /// The returned `MediaFrame` is valid until the next call to `receive_metadata`
+    /// on this sender (matching the `libomt.h` lifetime rules for `omt_send_receive`).
+    /// The metadata payload is UTF-8 encoded XML with a terminating null byte.
+    ///
+    /// # Parameters
+    ///
+    /// * `timeout` - Maximum time to wait for metadata
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(MediaFrame))` - Metadata frame received
+    /// * `Ok(None)` - Timed out waiting for metadata
+    /// * `Err(Error)` - Error occurred
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::{Sender, Name, Quality, Timeout};
+    /// use std::time::Duration;
+    ///
+    /// let name = Name::new("Camera 1");
+    /// let mut sender = Sender::create(&name, Quality::Default).unwrap();
+    ///
+    /// // Poll for metadata with 100ms timeout
+    /// let timeout = Timeout::from(Duration::from_millis(100));
+    /// if let Ok(Some(frame)) = sender.receive_metadata(timeout) {
+    ///     println!("Received metadata");
+    /// }
+    /// ```
+    pub fn receive_metadata(&mut self, timeout: Timeout) -> Result<Option<MediaFrame<'_>>, Error> {
         let frame_ptr =
             unsafe { ffi::omt_send_receive(self.handle.as_ptr(), timeout.as_millis_i32()) };
         if frame_ptr.is_null() {
             Ok(None)
         } else {
-            Ok(Some(MediaFrame::new(unsafe { &*frame_ptr })))
+            Ok(Some(unsafe { &*frame_ptr }.into()))
         }
     }
 
-    /// Retrieves tally state updates from connected receivers.
+    /// Receives the current tally state across all connections to a sender.
+    ///
+    /// If this function times out, the last known tally state will be received.
+    ///
+    /// # Parameters
+    ///
+    /// * `timeout` - Maximum time to wait for tally updates
+    /// * `tally` - Mutable reference to `Tally` struct that will be updated
+    ///
+    /// # Returns
+    ///
+    /// * `1` - Tally state changed
+    /// * `0` - Timed out or tally didn't change
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::{Sender, Name, Quality, Timeout, Tally};
+    /// use std::time::Duration;
+    ///
+    /// let name = Name::new("Camera 1");
+    /// let sender = Sender::create(&name, Quality::Default).unwrap();
+    ///
+    /// let mut tally = Tally::default();
+    /// let timeout = Timeout::from(Duration::from_millis(100));
+    /// let changed = sender.get_tally(timeout, &mut tally);
+    ///
+    /// if changed == 1 {
+    ///     println!("Tally state changed - Preview: {}, Program: {}",
+    ///              tally.preview, tally.program);
+    /// }
+    /// ```
     pub fn get_tally(&self, timeout: Timeout, tally: &mut Tally) -> i32 {
         let mut raw = ffi::OMTTally {
             preview: 0,
@@ -194,14 +380,46 @@ impl Sender {
         result
     }
 
-    /// Returns video stream statistics for this sender.
+    /// Retrieves statistics for the video stream.
+    ///
+    /// Returns detailed statistics about the video transmission including bytes sent,
+    /// frames transmitted, frames dropped, and codec performance metrics.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::{Sender, Name, Quality};
+    ///
+    /// let name = Name::new("Camera 1");
+    /// let sender = Sender::create(&name, Quality::Default).unwrap();
+    ///
+    /// let stats = sender.get_video_statistics();
+    /// println!("Video frames sent: {}", stats.frames);
+    /// println!("Bytes sent: {}", stats.bytes_sent);
+    /// ```
     pub fn get_video_statistics(&self) -> Statistics {
         let mut stats = unsafe { std::mem::zeroed::<ffi::OMTStatistics>() };
         unsafe { ffi::omt_send_getvideostatistics(self.handle.as_ptr(), &mut stats) };
         Statistics::from(&stats)
     }
 
-    /// Returns audio stream statistics for this sender.
+    /// Retrieves statistics for the audio stream.
+    ///
+    /// Returns detailed statistics about the audio transmission including bytes sent,
+    /// frames transmitted, frames dropped, and codec performance metrics.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::{Sender, Name, Quality};
+    ///
+    /// let name = Name::new("Camera 1");
+    /// let sender = Sender::create(&name, Quality::Default).unwrap();
+    ///
+    /// let stats = sender.get_audio_statistics();
+    /// println!("Audio frames sent: {}", stats.frames);
+    /// println!("Bytes sent: {}", stats.bytes_sent);
+    /// ```
     pub fn get_audio_statistics(&self) -> Statistics {
         let mut stats = unsafe { std::mem::zeroed::<ffi::OMTStatistics>() };
         unsafe { ffi::omt_send_getaudiostatistics(self.handle.as_ptr(), &mut stats) };
@@ -210,10 +428,17 @@ impl Sender {
 }
 
 impl Drop for Sender {
+    /// Destroys the sender instance created with `create`.
+    ///
+    /// Make sure any threads currently accessing sender functions with this instance
+    /// are closed before dropping.
     fn drop(&mut self) {
         unsafe { ffi::omt_send_destroy(self.handle.as_ptr()) };
     }
 }
+
+unsafe impl Send for Sender {}
+unsafe impl Sync for Sender {}
 
 #[cfg(test)]
 mod tests {
