@@ -49,29 +49,33 @@ fn connect_and_receive(address: &str) -> Result<(), Box<dyn std::error::Error>> 
 
     while start.elapsed().as_secs() < 10 {
         // Try to receive video frame
-        if let Some(frame) = receiver.receive_video(100)? {
-            video_count += 1;
-            if video_count % 30 == 0 {
-                println!(
-                    "Video: {}x{} @ {:.2} fps, codec: {:?}",
-                    frame.width(),
-                    frame.height(),
-                    frame.frame_rate(),
-                    frame.codec()
-                );
+        if let Some(frame) = receiver.receive(FrameType::VIDEO, 100)? {
+            if frame.frame_type() == FrameType::VIDEO {
+                video_count += 1;
+                if video_count % 30 == 0 {
+                    println!(
+                        "Video: {}x{} @ {:.2} fps, codec: {:?}",
+                        frame.width(),
+                        frame.height(),
+                        frame.frame_rate(),
+                        frame.codec()
+                    );
+                }
             }
         }
 
         // Try to receive audio frame
-        if let Some(frame) = receiver.receive_audio(10)? {
-            audio_count += 1;
-            if audio_count % 100 == 0 {
-                println!(
-                    "Audio: {} channels @ {}Hz, {} samples",
-                    frame.channels(),
-                    frame.sample_rate(),
-                    frame.samples_per_channel()
-                );
+        if let Some(frame) = receiver.receive(FrameType::AUDIO, 10)? {
+            if frame.frame_type() == FrameType::AUDIO {
+                audio_count += 1;
+                if audio_count % 100 == 0 {
+                    println!(
+                        "Audio: {} channels @ {}Hz, {} samples",
+                        frame.channels(),
+                        frame.sample_rate(),
+                        frame.samples_per_channel()
+                    );
+                }
             }
         }
     }

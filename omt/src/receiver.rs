@@ -1,7 +1,7 @@
 //! OMT receiver for receiving media streams.
 
 use crate::error::{Error, Result};
-use crate::frame::{AudioFrame, MediaFrame, MetadataFrame, VideoFrame};
+use crate::frame::MediaFrame;
 use crate::statistics::Statistics;
 use crate::tally::Tally;
 use crate::types::{FrameType, PreferredVideoFormat, Quality, ReceiveFlags, SenderInfo};
@@ -100,43 +100,10 @@ impl Receiver {
         Ok(unsafe { MediaFrame::from_ffi_ptr(ptr) })
     }
 
-    /// Receives a video frame.
-    ///
-    /// Convenience method that calls `receive()` and converts to a `VideoFrame`.
-    pub fn receive_video(&self, timeout_ms: i32) -> Result<Option<VideoFrame>> {
-        if let Some(frame) = self.receive(FrameType::VIDEO, timeout_ms)? {
-            Ok(Some(VideoFrame::from_media_frame(frame)?))
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Receives an audio frame.
-    ///
-    /// Convenience method that calls `receive()` and converts to an `AudioFrame`.
-    pub fn receive_audio(&self, timeout_ms: i32) -> Result<Option<AudioFrame>> {
-        if let Some(frame) = self.receive(FrameType::AUDIO, timeout_ms)? {
-            Ok(Some(AudioFrame::from_media_frame(frame)?))
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Receives a metadata frame.
-    ///
-    /// Convenience method that calls `receive()` and converts to a `MetadataFrame`.
-    pub fn receive_metadata(&self, timeout_ms: i32) -> Result<Option<MetadataFrame>> {
-        if let Some(frame) = self.receive(FrameType::METADATA, timeout_ms)? {
-            Ok(Some(MetadataFrame::from_media_frame(frame)?))
-        } else {
-            Ok(None)
-        }
-    }
-
     /// Sends a metadata frame to the sender.
     ///
     /// Only metadata frames are supported for sending from a receiver.
-    pub fn send_metadata(&self, _frame: &MetadataFrame) -> Result<bool> {
+    pub fn send_metadata(&self, _frame: &MediaFrame) -> Result<bool> {
         // TODO: Implement when we have a MediaFrame builder
         Ok(false)
     }

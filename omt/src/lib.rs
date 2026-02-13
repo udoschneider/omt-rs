@@ -66,7 +66,7 @@ mod types;
 pub use codec::Codec;
 pub use discovery::Discovery;
 pub use error::{Error, Result};
-pub use frame::{AudioFrame, MediaFrame, MetadataFrame, VideoFrame};
+pub use frame::MediaFrame;
 pub use receiver::Receiver;
 pub use sender::Sender;
 pub use settings::Settings;

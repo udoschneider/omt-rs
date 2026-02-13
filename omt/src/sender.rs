@@ -1,11 +1,11 @@
 //! OMT sender for broadcasting media streams.
 
+use crate::MAX_STRING_LENGTH;
 use crate::error::{Error, Result};
-use crate::frame::{MediaFrame, MetadataFrame};
+use crate::frame::MediaFrame;
 use crate::statistics::Statistics;
 use crate::tally::Tally;
 use crate::types::{Quality, SenderInfo};
-use crate::MAX_STRING_LENGTH;
 use std::ffi::CString;
 use std::ptr::NonNull;
 
@@ -175,16 +175,10 @@ impl Sender {
     /// Receives metadata from receivers.
     ///
     /// Blocks until metadata is available or timeout expires.
-    pub fn receive_metadata(&self, timeout_ms: i32) -> Result<Option<MetadataFrame>> {
-        let ptr = unsafe {
-            omt_sys::omt_send_receive(self.handle.as_ptr() as *mut _, timeout_ms)
-        };
+    pub fn receive_metadata(&self, timeout_ms: i32) -> Result<Option<MediaFrame>> {
+        let ptr = unsafe { omt_sys::omt_send_receive(self.handle.as_ptr() as *mut _, timeout_ms) };
 
-        if let Some(frame) = unsafe { MediaFrame::from_ffi_ptr(ptr) } {
-            Ok(Some(MetadataFrame::from_media_frame(frame)?))
-        } else {
-            Ok(None)
-        }
+        Ok(unsafe { MediaFrame::from_ffi_ptr(ptr) })
     }
 
     /// Gets the current tally state across all connections.

@@ -6,8 +6,8 @@
 //! To override the default folder, set the `OMT_STORAGE_PATH` environment
 //! variable prior to calling any OMT functions.
 
-use crate::error::{Error, Result};
 use crate::MAX_STRING_LENGTH;
+use crate::error::{Error, Result};
 use std::ffi::CString;
 
 /// Configuration settings manager.
@@ -44,10 +44,7 @@ impl Settings {
             return Ok(String::new());
         }
 
-        let bytes: Vec<u8> = buffer[..len as usize]
-            .iter()
-            .map(|&b| b as u8)
-            .collect();
+        let bytes: Vec<u8> = buffer[..len as usize].iter().map(|&b| b as u8).collect();
 
         String::from_utf8(bytes).map_err(|_| Error::InvalidUtf8)
     }

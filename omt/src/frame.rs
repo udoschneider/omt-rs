@@ -8,12 +8,15 @@ use std::slice;
 ///
 /// This is a safe wrapper around the FFI `OMTMediaFrame` structure.
 /// The frame data is valid until the next receive call or until the frame is dropped.
+///
+/// The frame type can be queried using [`frame_type()`](MediaFrame::frame_type).
+/// Type-specific methods are available in dedicated impl blocks for video, audio, and metadata frames.
 #[derive(Debug)]
-
 pub struct MediaFrame {
     ffi: omt_sys::OMTMediaFrame,
 }
 
+// Common methods available for all frame types
 impl MediaFrame {
     /// Creates a new zeroed media frame.
     pub(crate) fn new() -> Self {
@@ -89,159 +92,124 @@ impl MediaFrame {
         }
     }
 
-    /// Returns the per-frame metadata if available.
-    pub fn frame_metadata(&self) -> &[u8] {
+    /// Returns the per-frame metadata as a UTF-8 string if available.
+    ///
+    /// Returns an empty string if no metadata is present.
+    /// If the metadata is not valid UTF-8, this will return an empty string.
+    pub fn frame_metadata(&self) -> &str {
         if self.ffi.FrameMetadata.is_null() || self.ffi.FrameMetadataLength <= 0 {
-            &[]
+            ""
         } else {
-            unsafe {
+            let bytes = unsafe {
                 slice::from_raw_parts(
                     self.ffi.FrameMetadata as *const u8,
                     self.ffi.FrameMetadataLength as usize,
                 )
-            }
+            };
+            // Remove null terminator if present
+            let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+            std::str::from_utf8(&bytes[..end]).unwrap_or("")
         }
     }
 }
 
-/// A video frame with all video-specific properties.
-#[derive(Debug)]
-pub struct VideoFrame {
-    frame: MediaFrame,
-}
-
-impl VideoFrame {
-    /// Creates a video frame from a generic MediaFrame.
-    pub(crate) fn from_media_frame(frame: MediaFrame) -> Result<Self> {
-        if frame.frame_type() != FrameType::VIDEO {
-            return Err(Error::InvalidFrameType);
-        }
-        Ok(Self { frame })
-    }
-
+// Video-specific methods
+impl MediaFrame {
     /// Returns the video width in pixels.
+    ///
+    /// This method is only meaningful for video frames.
     pub fn width(&self) -> i32 {
-        self.frame.ffi.Width
+        self.ffi.Width
     }
 
     /// Returns the video height in pixels.
+    ///
+    /// This method is only meaningful for video frames.
     pub fn height(&self) -> i32 {
-        self.frame.ffi.Height
+        self.ffi.Height
     }
 
     /// Returns the stride (row pitch) in bytes.
+    ///
+    /// This method is only meaningful for video frames.
     pub fn stride(&self) -> i32 {
-        self.frame.ffi.Stride
+        self.ffi.Stride
     }
 
     /// Returns the video flags.
+    ///
+    /// This method is only meaningful for video frames.
     pub fn flags(&self) -> VideoFlags {
-        VideoFlags::from_ffi(self.frame.ffi.Flags)
+        VideoFlags::from_ffi(self.ffi.Flags)
     }
 
     /// Returns the frame rate numerator.
+    ///
+    /// This method is only meaningful for video frames.
     pub fn frame_rate_numerator(&self) -> i32 {
-        self.frame.ffi.FrameRateN
+        self.ffi.FrameRateN
     }
 
     /// Returns the frame rate denominator.
+    ///
+    /// This method is only meaningful for video frames.
     pub fn frame_rate_denominator(&self) -> i32 {
-        self.frame.ffi.FrameRateD
+        self.ffi.FrameRateD
     }
 
     /// Returns the frame rate as a floating point value.
+    ///
+    /// This method is only meaningful for video frames.
     pub fn frame_rate(&self) -> f64 {
-        if self.frame.ffi.FrameRateD != 0 {
-            self.frame.ffi.FrameRateN as f64 / self.frame.ffi.FrameRateD as f64
+        if self.ffi.FrameRateD != 0 {
+            self.ffi.FrameRateN as f64 / self.ffi.FrameRateD as f64
         } else {
             0.0
         }
     }
 
     /// Returns the display aspect ratio.
+    ///
+    /// This method is only meaningful for video frames.
     pub fn aspect_ratio(&self) -> f32 {
-        self.frame.ffi.AspectRatio
+        self.ffi.AspectRatio
     }
 
     /// Returns the color space.
+    ///
+    /// This method is only meaningful for video frames.
     pub fn color_space(&self) -> Option<ColorSpace> {
-        ColorSpace::from_ffi(self.frame.ffi.ColorSpace)
-    }
-
-    /// Returns the codec.
-    pub fn codec(&self) -> Option<Codec> {
-        self.frame.codec()
-    }
-
-    /// Returns the timestamp.
-    pub fn timestamp(&self) -> i64 {
-        self.frame.timestamp()
-    }
-
-    /// Returns the pixel data.
-    pub fn data(&self) -> &[u8] {
-        self.frame.data()
-    }
-
-    /// Returns the compressed VMX1 data if available.
-    pub fn compressed_data(&self) -> &[u8] {
-        self.frame.compressed_data()
-    }
-
-    /// Returns the per-frame metadata if available.
-    pub fn frame_metadata(&self) -> &[u8] {
-        self.frame.frame_metadata()
+        ColorSpace::from_ffi(self.ffi.ColorSpace)
     }
 }
 
-/// An audio frame with all audio-specific properties.
-#[derive(Debug)]
-pub struct AudioFrame {
-    frame: MediaFrame,
-}
-
-impl AudioFrame {
-    /// Creates an audio frame from a generic MediaFrame.
-    pub(crate) fn from_media_frame(frame: MediaFrame) -> Result<Self> {
-        if frame.frame_type() != FrameType::AUDIO {
-            return Err(Error::InvalidFrameType);
-        }
-        Ok(Self { frame })
-    }
-
+// Audio-specific methods
+impl MediaFrame {
     /// Returns the sample rate (e.g., 48000, 44100).
+    ///
+    /// This method is only meaningful for audio frames.
     pub fn sample_rate(&self) -> i32 {
-        self.frame.ffi.SampleRate
+        self.ffi.SampleRate
     }
 
     /// Returns the number of audio channels (maximum 32).
+    ///
+    /// This method is only meaningful for audio frames.
     pub fn channels(&self) -> i32 {
-        self.frame.ffi.Channels
+        self.ffi.Channels
     }
 
     /// Returns the number of samples per channel.
+    ///
+    /// This method is only meaningful for audio frames.
     pub fn samples_per_channel(&self) -> i32 {
-        self.frame.ffi.SamplesPerChannel
-    }
-
-    /// Returns the codec (should be FPA1 for audio).
-    pub fn codec(&self) -> Option<Codec> {
-        self.frame.codec()
-    }
-
-    /// Returns the timestamp.
-    pub fn timestamp(&self) -> i64 {
-        self.frame.timestamp()
-    }
-
-    /// Returns the planar 32-bit floating point audio data.
-    pub fn data(&self) -> &[u8] {
-        self.frame.data()
+        self.ffi.SamplesPerChannel
     }
 
     /// Returns the audio data as f32 slices (one per channel).
     ///
     /// Each slice contains `samples_per_channel` samples.
+    /// This method is only meaningful for audio frames.
     pub fn as_f32_planar(&self) -> Vec<&[f32]> {
         let data = self.data();
         let samples_per_channel = self.samples_per_channel() as usize;
@@ -263,33 +231,12 @@ impl AudioFrame {
     }
 }
 
-/// A metadata frame containing UTF-8 encoded XML.
-#[derive(Debug)]
-pub struct MetadataFrame {
-    frame: MediaFrame,
-}
-
-impl MetadataFrame {
-    /// Creates a metadata frame from a generic MediaFrame.
-    pub(crate) fn from_media_frame(frame: MediaFrame) -> Result<Self> {
-        if frame.frame_type() != FrameType::METADATA {
-            return Err(Error::InvalidFrameType);
-        }
-        Ok(Self { frame })
-    }
-
-    /// Returns the timestamp.
-    pub fn timestamp(&self) -> i64 {
-        self.frame.timestamp()
-    }
-
-    /// Returns the metadata as a byte slice.
-    pub fn data(&self) -> &[u8] {
-        self.frame.data()
-    }
-
+// Metadata-specific methods
+impl MediaFrame {
     /// Returns the metadata as a UTF-8 string.
-    pub fn as_str(&self) -> Result<&str> {
+    ///
+    /// This method is only meaningful for metadata frames.
+    pub fn as_utf8(&self) -> Result<&str> {
         let data = self.data();
         // Remove null terminator if present
         let end = data.iter().position(|&b| b == 0).unwrap_or(data.len());
