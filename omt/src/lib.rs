@@ -56,6 +56,7 @@ mod codec;
 mod discovery;
 mod error;
 mod frame;
+mod frame_builder;
 mod receiver;
 mod sender;
 mod settings;
@@ -67,6 +68,9 @@ pub use codec::Codec;
 pub use discovery::Discovery;
 pub use error::{Error, Result};
 pub use frame::MediaFrame;
+pub use frame_builder::{
+    AudioFrameBuilder, MetadataFrameBuilder, OwnedMediaFrame, VideoFrameBuilder,
+};
 pub use receiver::Receiver;
 pub use sender::Sender;
 pub use settings::Settings;

@@ -20,6 +20,7 @@ OMT is a protocol for low-latency transmission of video, audio, and metadata ove
 - 🌐 **Network discovery**: Automatic discovery of available sources on the network
 - 📊 **Statistics**: Built-in performance monitoring and metrics
 - 🎨 **Multiple codecs**: Support for various video formats (UYVY, BGRA, VMX1, etc.) and audio (FPA1)
+- 🏗️ **Frame builders**: Ergonomic builders for creating video, audio, and metadata frames
 
 ## Installation
 
@@ -77,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Sending Media
 
 ```rust
-use omt::{Sender, Quality, SenderInfo};
+use omt::{Sender, Quality, SenderInfo, VideoFrameBuilder, Codec};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create sender
@@ -91,12 +92,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     sender.set_sender_information(&info)?;
 
-    // Send frames
-    // sender.send(&video_frame)?;
+    // Create and send a video frame
+    let data = vec![0u8; 1920 * 1080 * 2]; // UYVY: 2 bytes per pixel
+    let frame = VideoFrameBuilder::new()
+        .codec(Codec::Uyvy)
+        .dimensions(1920, 1080)
+        .frame_rate(30, 1)
+        .aspect_ratio(16.0 / 9.0)
+        .data(data)
+        .build()?;
+    
+    sender.send(&frame.as_media_frame())?;
 
     Ok(())
 }
 ```
+
+See the [Frame Builders Guide](../docs/FRAME_BUILDERS.md) for detailed information on creating video, audio, and metadata frames.
 
 ## Core Types
 

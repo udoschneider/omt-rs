@@ -50,6 +50,15 @@ pub enum Error {
         provided: usize,
     },
 
+    /// Invalid parameter provided.
+    #[error("invalid parameter '{parameter}': {reason}")]
+    InvalidParameter {
+        /// Parameter name.
+        parameter: String,
+        /// Reason for invalidity.
+        reason: String,
+    },
+
     /// Generic error with message.
     #[error("{0}")]
     Other(String),

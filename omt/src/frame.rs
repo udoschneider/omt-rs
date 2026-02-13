@@ -40,6 +40,18 @@ impl MediaFrame {
         }
     }
 
+    /// Creates a frame from an owned FFI structure.
+    ///
+    /// This is used by frame builders to create frames that borrow from owned data.
+    ///
+    /// # Safety
+    ///
+    /// The FFI structure must be properly initialized and all pointers within it
+    /// must remain valid for the lifetime of the returned MediaFrame.
+    pub(crate) unsafe fn from_owned_ffi(ffi: omt_sys::OMTMediaFrame) -> Self {
+        Self { ffi }
+    }
+
     /// Returns a reference to the underlying FFI structure.
     pub(crate) fn as_ffi(&self) -> &omt_sys::OMTMediaFrame {
         &self.ffi
