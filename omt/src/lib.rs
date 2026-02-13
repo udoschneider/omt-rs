@@ -48,6 +48,32 @@
 //! }
 //! # Ok::<(), omt::Error>(())
 //! ```
+//!
+//! ## Converting Video Frames
+//!
+//! ```no_run
+//! use omt::{Receiver, FrameType, PreferredVideoFormat, ReceiveFlags};
+//!
+//! let receiver = Receiver::new(
+//!     "omt://hostname:6400",
+//!     FrameType::VIDEO,
+//!     PreferredVideoFormat::Uyvy,
+//!     ReceiveFlags::NONE,
+//! )?;
+//!
+//! if let Some(frame) = receiver.receive(FrameType::VIDEO, 1000)? {
+//!     // Convert to RGB8
+//!     if let Some(rgb_pixels) = frame.to_rgb8() {
+//!         // Process RGB8 pixels...
+//!     }
+//!
+//!     // Convert to RGBA8
+//!     if let Some(rgba_pixels) = frame.to_rgba8() {
+//!         // Process RGBA8 pixels...
+//!     }
+//! }
+//! # Ok::<(), omt::Error>(())
+//! ```
 
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]
@@ -63,6 +89,7 @@ mod settings;
 mod statistics;
 mod tally;
 mod types;
+mod video_conversion;
 
 pub use codec::Codec;
 pub use discovery::Discovery;

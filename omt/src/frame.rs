@@ -2,6 +2,12 @@
 
 use crate::error::{Error, Result};
 use crate::types::{Codec, ColorSpace, FrameType, VideoFlags};
+use crate::video_conversion::{
+    bgra_to_rgb8, bgra_to_rgba8, get_yuv_matrix, get_yuv_range, nv12_to_rgb8, nv12_to_rgba8,
+    p216_to_rgb16, p216_to_rgba16, pa16_to_rgb16, pa16_to_rgba16, uyva_to_rgb8, uyva_to_rgba8,
+    uyvy_to_rgb8, uyvy_to_rgba8, yuy2_to_rgb8, yuy2_to_rgba8, yv12_to_rgb8, yv12_to_rgba8,
+};
+use rgb::{RGB8, RGB16, RGBA8, RGBA16};
 use std::slice;
 
 /// A media frame containing video, audio, or metadata.
@@ -192,6 +198,152 @@ impl MediaFrame {
     /// This method is only meaningful for video frames.
     pub fn color_space(&self) -> Option<ColorSpace> {
         ColorSpace::from_ffi(self.ffi.ColorSpace)
+    }
+
+    /// Converts the video frame to RGB8 format.
+    ///
+    /// Returns a vector of RGB8 pixels if the conversion is supported for the frame's codec,
+    /// or `None` if the codec doesn't support conversion to RGB8.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use omt::MediaFrame;
+    /// # fn example(frame: &MediaFrame) {
+    /// if let Some(rgb_pixels) = frame.to_rgb8() {
+    ///     // Process RGB8 pixels
+    /// }
+    /// # }
+    /// ```
+    pub fn to_rgb8(&self) -> Option<Vec<RGB8>> {
+        let width = self.width() as usize;
+        let height = self.height() as usize;
+        let stride = self.stride() as usize;
+
+        let raw_data = self.data();
+
+        let yuv_range = get_yuv_range(self);
+        let yuv_matrix = get_yuv_matrix(self);
+
+        match self.codec()? {
+            Codec::Uyvy => uyvy_to_rgb8(raw_data, width, height, stride, yuv_range, yuv_matrix),
+            Codec::Yuy2 => yuy2_to_rgb8(raw_data, width, height, stride, yuv_range, yuv_matrix),
+            Codec::Nv12 => nv12_to_rgb8(raw_data, width, height, stride, yuv_range, yuv_matrix),
+            Codec::Yv12 => yv12_to_rgb8(raw_data, width, height, stride, yuv_range, yuv_matrix),
+            Codec::Bgra => bgra_to_rgb8(raw_data, width, height, stride),
+            Codec::Uyva => uyva_to_rgb8(raw_data, width, height, stride, yuv_range, yuv_matrix),
+            Codec::P216 | Codec::Pa16 => None,
+            Codec::Vmx1 | Codec::Fpa1 => None,
+        }
+    }
+
+    /// Converts the video frame to RGBA8 format.
+    ///
+    /// Returns a vector of RGBA8 pixels if the conversion is supported for the frame's codec,
+    /// or `None` if the codec doesn't support conversion to RGBA8.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use omt::MediaFrame;
+    /// # fn example(frame: &MediaFrame) {
+    /// if let Some(rgba_pixels) = frame.to_rgba8() {
+    ///     // Process RGBA8 pixels
+    /// }
+    /// # }
+    /// ```
+    pub fn to_rgba8(&self) -> Option<Vec<RGBA8>> {
+        let width = self.width() as usize;
+        let height = self.height() as usize;
+        let stride = self.stride() as usize;
+
+        let raw_data = self.data();
+
+        let yuv_range = get_yuv_range(self);
+        let yuv_matrix = get_yuv_matrix(self);
+
+        match self.codec()? {
+            Codec::Uyvy => uyvy_to_rgba8(raw_data, width, height, stride, yuv_range, yuv_matrix),
+            Codec::Yuy2 => yuy2_to_rgba8(raw_data, width, height, stride, yuv_range, yuv_matrix),
+            Codec::Nv12 => nv12_to_rgba8(raw_data, width, height, stride, yuv_range, yuv_matrix),
+            Codec::Yv12 => yv12_to_rgba8(raw_data, width, height, stride, yuv_range, yuv_matrix),
+            Codec::Bgra => bgra_to_rgba8(raw_data, width, height, stride),
+            Codec::Uyva => uyva_to_rgba8(raw_data, width, height, stride, yuv_range, yuv_matrix),
+            Codec::P216 | Codec::Pa16 => None,
+            Codec::Vmx1 | Codec::Fpa1 => None,
+        }
+    }
+
+    /// Converts the video frame to RGB16 format (16-bit per channel).
+    ///
+    /// Returns a vector of RGB16 pixels if the conversion is supported for the frame's codec,
+    /// or `None` if the codec doesn't support conversion to RGB16.
+    ///
+    /// Currently supports P216 and PA16 codecs.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use omt::MediaFrame;
+    /// # fn example(frame: &MediaFrame) {
+    /// if let Some(rgb16_pixels) = frame.to_rgb16() {
+    ///     // Process RGB16 pixels
+    /// }
+    /// # }
+    /// ```
+    pub fn to_rgb16(&self) -> Option<Vec<RGB16>> {
+        let width = self.width() as usize;
+        let height = self.height() as usize;
+        let stride = self.stride() as usize;
+
+        let raw_data = self.data();
+
+        let yuv_range = get_yuv_range(self);
+        let yuv_matrix = get_yuv_matrix(self);
+
+        match self.codec()? {
+            Codec::Uyvy | Codec::Yuy2 | Codec::Nv12 | Codec::Yv12 | Codec::Bgra => None,
+            Codec::Uyva => None,
+            Codec::P216 => p216_to_rgb16(raw_data, width, height, stride, yuv_range, yuv_matrix),
+            Codec::Pa16 => pa16_to_rgb16(raw_data, width, height, stride, yuv_range, yuv_matrix),
+            Codec::Vmx1 | Codec::Fpa1 => None,
+        }
+    }
+
+    /// Converts the video frame to RGBA16 format (16-bit per channel).
+    ///
+    /// Returns a vector of RGBA16 pixels if the conversion is supported for the frame's codec,
+    /// or `None` if the codec doesn't support conversion to RGBA16.
+    ///
+    /// Currently supports P216 and PA16 codecs.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use omt::MediaFrame;
+    /// # fn example(frame: &MediaFrame) {
+    /// if let Some(rgba16_pixels) = frame.to_rgba16() {
+    ///     // Process RGBA16 pixels
+    /// }
+    /// # }
+    /// ```
+    pub fn to_rgba16(&self) -> Option<Vec<RGBA16>> {
+        let width = self.width() as usize;
+        let height = self.height() as usize;
+        let stride = self.stride() as usize;
+
+        let raw_data = self.data();
+
+        let yuv_range = get_yuv_range(self);
+        let yuv_matrix = get_yuv_matrix(self);
+
+        match self.codec()? {
+            Codec::Uyvy | Codec::Yuy2 | Codec::Nv12 | Codec::Yv12 | Codec::Bgra => None,
+            Codec::Uyva => None,
+            Codec::P216 => p216_to_rgba16(raw_data, width, height, stride, yuv_range, yuv_matrix),
+            Codec::Pa16 => pa16_to_rgba16(raw_data, width, height, stride, yuv_range, yuv_matrix),
+            Codec::Vmx1 | Codec::Fpa1 => None,
+        }
     }
 }
 

@@ -7,3 +7,5 @@ edition = "2024"
 omt-sys = { path = "../omt-sys" }
 thiserror = "2.0"
 bitflags = "2.6"
+rgb = "0.8.52"
+yuv = "0.8.11"
