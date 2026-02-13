@@ -1,0 +1,92 @@
+//! Example OMT receiver that connects to a source and receives frames.
+
+use omt::{Discovery, FrameType, PreferredVideoFormat, ReceiveFlags, Receiver};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Discover available sources
+    println!("Discovering OMT sources...");
+    let sources = Discovery::get_addresses();
+
+    if sources.is_empty() {
+        println!("No sources found. Using default address.");
+        let address = "omt://localhost:6400";
+        connect_and_receive(address)?;
+    } else {
+        println!("Found {} source(s):", sources.len());
+        for source in &sources {
+            println!("  - {}", source);
+        }
+
+        // Connect to the first source
+        connect_and_receive(&sources[0])?;
+    }
+
+    Ok(())
+}
+
+fn connect_and_receive(address: &str) -> Result<(), Box<dyn std::error::Error>> {
+    println!("\nConnecting to: {}", address);
+
+    // Create receiver for video and audio
+    let receiver = Receiver::new(
+        address,
+        FrameType::VIDEO | FrameType::AUDIO,
+        PreferredVideoFormat::Uyvy,
+        ReceiveFlags::NONE,
+    )?;
+
+    println!("Connected! Waiting for frames...");
+
+    // Get sender information if available
+    if let Some(info) = receiver.get_sender_information()? {
+        println!("Sender: {}", info);
+    }
+
+    // Receive frames for 10 seconds
+    let start = std::time::Instant::now();
+    let mut video_count = 0;
+    let mut audio_count = 0;
+
+    while start.elapsed().as_secs() < 10 {
+        // Try to receive video frame
+        if let Some(frame) = receiver.receive_video(100)? {
+            video_count += 1;
+            if video_count % 30 == 0 {
+                println!(
+                    "Video: {}x{} @ {:.2} fps, codec: {:?}",
+                    frame.width(),
+                    frame.height(),
+                    frame.frame_rate(),
+                    frame.codec()
+                );
+            }
+        }
+
+        // Try to receive audio frame
+        if let Some(frame) = receiver.receive_audio(10)? {
+            audio_count += 1;
+            if audio_count % 100 == 0 {
+                println!(
+                    "Audio: {} channels @ {}Hz, {} samples",
+                    frame.channels(),
+                    frame.sample_rate(),
+                    frame.samples_per_channel()
+                );
+            }
+        }
+    }
+
+    println!(
+        "\nReceived {} video frames and {} audio frames",
+        video_count, audio_count
+    );
+
+    // Get statistics
+    let video_stats = receiver.get_video_statistics();
+    let audio_stats = receiver.get_audio_statistics();
+
+    println!("\nVideo Stats: {}", video_stats);
+    println!("Audio Stats: {}", audio_stats);
+
+    Ok(())
+}
