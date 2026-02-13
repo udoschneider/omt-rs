@@ -10,6 +10,13 @@ impl Discovery {
     ///
     /// Each string is in the format "HOSTNAME (NAME)" or a URL like "omt://hostname:port".
     ///
+    /// # Discovery Behavior
+    ///
+    /// The underlying C API (`omt_discovery_getaddresses`) returns a list of sources
+    /// (senders) currently available on the network. Discovery runs in a background thread,
+    /// so the first call typically returns an empty or incomplete list as the discovery
+    /// process is still initializing.
+    ///
     /// # Memory Safety Note
     ///
     /// The C API returns a `char**` array that is "valid until the next call to getaddresses".
