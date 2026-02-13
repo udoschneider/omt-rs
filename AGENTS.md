@@ -58,6 +58,7 @@ We treat documentation as a first-class citizen.
 *   **Public API:** All public structs, enums, traits, and functions must have doc comments (`///`).
 *   **Examples:** Include usage examples in doc comments. These are automatically tested via `cargo test`.
 *   **Module Docs:** Include a `//!` comment at the top of main modules explaining their purpose.
+*   **Summary/Progress Files:** You must not create files that document the changes made unless explicitly requested by the project maintainer!
 
 ```rust
 /// Calculates the sum of two numbers.
