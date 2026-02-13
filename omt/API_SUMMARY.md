@@ -176,11 +176,11 @@ Bitflags:
   - `discovery_server()`, `set_discovery_server()`
   - `network_port_start()`, `set_network_port_start()`
   - `network_port_end()`, `set_network_port_end()`
+  - `set_logging_filename()` - Configure or disable logging to file
 
 ### Top-Level Functions
 
-#### `set_logging_filename()`
-Configure or disable logging to file
+
 
 ### Error Handling
 

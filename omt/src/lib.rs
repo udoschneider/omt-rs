@@ -74,6 +74,23 @@
 //! }
 //! # Ok::<(), omt::Error>(())
 //! ```
+//!
+//! ## Configuring Settings
+//!
+//! ```no_run
+//! use omt::Settings;
+//!
+//! // Configure discovery server
+//! Settings::set_discovery_server("omt://server:6400")?;
+//!
+//! // Configure network port range
+//! Settings::set_network_port_start(7000);
+//! Settings::set_network_port_end(7200);
+//!
+//! // Configure logging
+//! Settings::set_logging_filename(Some("/var/log/omt.log"));
+//! # Ok::<(), omt::Error>(())
+//! ```
 
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]
@@ -106,44 +123,6 @@ pub use tally::Tally;
 pub use types::{
     ColorSpace, FrameType, PreferredVideoFormat, Quality, ReceiveFlags, SenderInfo, VideoFlags,
 };
-
-/// Sets the logging filename for the OMT library.
-///
-/// If this function is not called, a log file is created in the default location:
-/// - macOS/Linux: `~/.OMT/logs/` folder for this process
-/// - Windows: `C:\ProgramData\OMT\logs`
-///
-/// To override the default folder used for logs, set the `OMT_STORAGE_PATH`
-/// environment variable prior to calling any OMT functions.
-///
-/// # Arguments
-///
-/// * `filename` - Full path to the log file, or `None` to disable logging
-///
-/// # Examples
-///
-/// ```no_run
-/// # use omt::set_logging_filename;
-/// // Enable logging to a specific file
-/// set_logging_filename(Some("/tmp/omt.log"));
-///
-/// // Disable logging
-/// set_logging_filename(None);
-/// ```
-pub fn set_logging_filename(filename: Option<&str>) {
-    use std::ffi::CString;
-    use std::ptr;
-
-    unsafe {
-        if let Some(name) = filename {
-            if let Ok(c_name) = CString::new(name) {
-                omt_sys::omt_setloggingfilename(c_name.as_ptr());
-            }
-        } else {
-            omt_sys::omt_setloggingfilename(ptr::null());
-        }
-    }
-}
 
 /// Maximum length for string fields in OMT structures.
 pub const MAX_STRING_LENGTH: usize = omt_sys::OMT_MAX_STRING_LENGTH as usize;

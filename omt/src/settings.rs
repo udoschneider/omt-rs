@@ -143,6 +143,45 @@ impl Settings {
     pub fn set_network_port_end(port: i32) {
         Self::set_integer("NetworkPortEnd", port);
     }
+
+    /// Sets the logging filename for the OMT library.
+    ///
+    /// If this function is not called, a log file is created in the default location:
+    /// - macOS/Linux: `~/.OMT/logs/` folder for this process
+    /// - Windows: `C:\ProgramData\OMT\logs`
+    ///
+    /// To override the default folder used for logs, set the `OMT_STORAGE_PATH`
+    /// environment variable prior to calling any OMT functions.
+    ///
+    /// # Arguments
+    ///
+    /// * `filename` - Full path to the log file, or `None` to disable logging
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::Settings;
+    ///
+    /// // Enable logging to a specific file
+    /// Settings::set_logging_filename(Some("/tmp/omt.log"));
+    ///
+    /// // Disable logging
+    /// Settings::set_logging_filename(None);
+    /// ```
+    pub fn set_logging_filename(filename: Option<&str>) {
+        use std::ffi::CString;
+        use std::ptr;
+
+        unsafe {
+            if let Some(name) = filename {
+                if let Ok(c_name) = CString::new(name) {
+                    omt_sys::omt_setloggingfilename(c_name.as_ptr());
+                }
+            } else {
+                omt_sys::omt_setloggingfilename(ptr::null());
+            }
+        }
+    }
 }
 
 #[cfg(test)]

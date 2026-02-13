@@ -197,13 +197,13 @@ Settings::set_network_port_end(7200);
 ### Logging
 
 ```rust
-use omt::set_logging_filename;
+use omt::Settings;
 
 // Enable logging to file
-set_logging_filename(Some("/var/log/omt.log"));
+Settings::set_logging_filename(Some("/var/log/omt.log"));
 
 // Disable logging
-set_logging_filename(None);
+Settings::set_logging_filename(None);
 ```
 
 ## Examples
