@@ -2,8 +2,8 @@ use clap::Parser;
 use log::{error, info};
 use omt::{
     helpers::{discover_first_sender, discover_matching_sender},
-    Address, Codec, ColorSpace, FrameType, MediaFrame, Name, PreferredVideoFormat, Quality,
-    ReceiveFlags, Receiver, Sender, Timeout, VideoFlags,
+    Address, Codec, ColorSpace, FrameRate, FrameType, MediaFrame, Name, PreferredVideoFormat,
+    Quality, ReceiveFlags, Receiver, Sender, Timeout, VideoFlags,
 };
 
 use std::time::Duration;
@@ -86,7 +86,7 @@ fn main() {
         match receiver.receive(FrameType::Video, Timeout::from_millis(1000)) {
             Ok(Some(frame)) => {
                 let timestamp = frame.timestamp();
-                let (fr_n, fr_d) = frame.frame_rate();
+                let frame_rate = frame.frame_rate();
                 let aspect_ratio = frame.aspect_ratio();
                 let color_space = frame.color_space();
                 let flags = frame.flags();
@@ -107,8 +107,7 @@ fn main() {
                     width,
                     height,
                     flags,
-                    fr_n,
-                    fr_d,
+                    frame_rate,
                     aspect_ratio,
                     color_space,
                     timestamp,
@@ -145,8 +144,7 @@ fn bw_from_rgb(
     width: i32,
     height: i32,
     flags: VideoFlags,
-    frame_rate_n: i32,
-    frame_rate_d: i32,
+    frame_rate: FrameRate,
     aspect_ratio: f32,
     color_space: ColorSpace,
     timestamp: i64,
@@ -190,8 +188,7 @@ fn bw_from_rgb(
         height as i32,
         stride as i32,
         out_flags,
-        frame_rate_n,
-        frame_rate_d,
+        frame_rate,
         aspect_ratio,
         color_space,
         timestamp,

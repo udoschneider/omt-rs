@@ -51,7 +51,7 @@
 //! ## Creating a video frame
 //!
 //! ```
-//! use omt::{MediaFrame, Codec, VideoFlags, ColorSpace};
+//! use omt::{MediaFrame, Codec, VideoFlags, ColorSpace, FrameRate};
 //!
 //! let frame = MediaFrame::video(
 //!     Codec::BGRA,
@@ -59,8 +59,7 @@
 //!     1080,
 //!     1920 * 4,
 //!     VideoFlags::NONE,
-//!     30,
-//!     1,
+//!     FrameRate::fps_30(),
 //!     1.77778,
 //!     ColorSpace::BT709,
 //!     -1,  // Auto-generate timestamps
@@ -96,7 +95,7 @@
 
 use crate::ffi;
 use crate::helpers::{null_terminated_bytes, without_null_terminator};
-use crate::types::{Codec, ColorSpace, VideoFlags};
+use crate::types::{Codec, ColorSpace, FrameRate, VideoFlags};
 use crate::video_conversion;
 use crate::Error;
 use rgb::bytemuck;
@@ -145,8 +144,8 @@ impl<'a> MediaFrame<'a> {
     ///   - `width * 4` for BGRA
     ///   - `width` for planar formats
     /// - `flags`: Video flags indicating properties like interlacing, alpha channel, etc.
-    /// - `frame_rate_n`: Frame rate numerator (frames per second).
-    /// - `frame_rate_d`: Frame rate denominator. For example, `60/1` = 60 fps, `30000/1001` ≈ 29.97 fps.
+    /// - `frame_rate`: Frame rate as a `FrameRate` struct.
+    ///
     /// - `aspect_ratio`: Display aspect ratio as width/height. For example, `1.77778` for 16:9.
     /// - `color_space`: Color space of the video (BT601, BT709, or Undefined).
     /// - `timestamp`: Frame timestamp in OMT timebase (10,000,000 ticks per second).
@@ -163,7 +162,7 @@ impl<'a> MediaFrame<'a> {
     /// # Examples
     ///
     /// ```
-    /// use omt::{MediaFrame, Codec, VideoFlags, ColorSpace};
+    /// use omt::{MediaFrame, Codec, VideoFlags, ColorSpace, FrameRate};
     ///
     /// // Create a 1920x1080 BGRA frame at 30 fps
     /// let frame = MediaFrame::video(
@@ -172,8 +171,7 @@ impl<'a> MediaFrame<'a> {
     ///     1080,
     ///     1920 * 4,
     ///     VideoFlags::NONE,
-    ///     30,
-    ///     1,
+    ///     FrameRate::fps_30(),
     ///     1.77778,
     ///     ColorSpace::BT709,
     ///     -1,
@@ -187,8 +185,7 @@ impl<'a> MediaFrame<'a> {
         height: i32,
         stride: i32,
         flags: VideoFlags,
-        frame_rate_n: i32,
-        frame_rate_d: i32,
+        frame_rate: FrameRate,
         aspect_ratio: f32,
         color_space: ColorSpace,
         timestamp: i64,
@@ -205,8 +202,8 @@ impl<'a> MediaFrame<'a> {
             Height: height,
             Stride: stride,
             Flags: i32::from(flags),
-            FrameRateN: frame_rate_n,
-            FrameRateD: frame_rate_d,
+            FrameRateN: frame_rate.numerator(),
+            FrameRateD: frame_rate.denominator(),
             AspectRatio: aspect_ratio,
             ColorSpace: color_space.into(),
             SampleRate: 0,
@@ -609,7 +606,7 @@ impl<'a> MediaFrame<'a> {
     /// ## Basic per-frame metadata
     ///
     /// ```
-    /// use omt::{MediaFrame, Codec, VideoFlags, ColorSpace};
+    /// use omt::{MediaFrame, Codec, VideoFlags, ColorSpace, FrameRate};
     ///
     /// let mut frame = MediaFrame::video(
     ///     Codec::BGRA,
@@ -617,8 +614,7 @@ impl<'a> MediaFrame<'a> {
     ///     1080,
     ///     1920 * 4,
     ///     VideoFlags::NONE,
-    ///     30,
-    ///     1,
+    ///     FrameRate::fps_30(),
     ///     1.77778,
     ///     ColorSpace::BT709,
     ///     -1,
@@ -631,7 +627,7 @@ impl<'a> MediaFrame<'a> {
     /// ## Method chaining
     ///
     /// ```
-    /// use omt::{MediaFrame, Codec, VideoFlags, ColorSpace};
+    /// use omt::{MediaFrame, Codec, VideoFlags, ColorSpace, FrameRate};
     ///
     /// let mut frame = MediaFrame::video(
     ///     Codec::BGRA,
@@ -639,8 +635,7 @@ impl<'a> MediaFrame<'a> {
     ///     480,
     ///     640 * 4,
     ///     VideoFlags::NONE,
-    ///     30,
-    ///     1,
+    ///     FrameRate::fps_30(),
     ///     1.33333,
     ///     ColorSpace::BT601,
     ///     -1,
@@ -652,7 +647,7 @@ impl<'a> MediaFrame<'a> {
     /// ## Frame-specific ancillary data
     ///
     /// ```
-    /// use omt::{MediaFrame, Codec, VideoFlags, ColorSpace};
+    /// use omt::{MediaFrame, Codec, VideoFlags, ColorSpace, FrameRate};
     ///
     /// let mut frame = MediaFrame::video(
     ///     Codec::UYVY,
@@ -660,8 +655,7 @@ impl<'a> MediaFrame<'a> {
     ///     1080,
     ///     1920 * 2,
     ///     VideoFlags::NONE,
-    ///     25,
-    ///     1,
+    ///     FrameRate::fps_25(),
     ///     1.77778,
     ///     ColorSpace::BT709,
     ///     -1,
@@ -710,7 +704,7 @@ impl<'a> MediaFrame<'a> {
     /// # Examples
     ///
     /// ```
-    /// use omt::{MediaFrame, Codec, VideoFlags, ColorSpace};
+    /// use omt::{MediaFrame, Codec, VideoFlags, ColorSpace, FrameRate};
     ///
     /// let mut frame = MediaFrame::video(
     ///     Codec::BGRA,
@@ -718,8 +712,7 @@ impl<'a> MediaFrame<'a> {
     ///     1080,
     ///     1920 * 4,
     ///     VideoFlags::NONE,
-    ///     30,
-    ///     1,
+    ///     FrameRate::fps_30(),
     ///     1.77778,
     ///     ColorSpace::BT709,
     ///     -1,
@@ -736,8 +729,7 @@ impl<'a> MediaFrame<'a> {
     ///     480,
     ///     640 * 4,
     ///     VideoFlags::NONE,
-    ///     30,
-    ///     1,
+    ///     FrameRate::fps_30(),
     ///     1.33333,
     ///     ColorSpace::BT601,
     ///     -1,
@@ -805,20 +797,21 @@ impl<'a> MediaFrame<'a> {
         self.raw().Flags.into()
     }
 
-    /// Returns the frame rate as a numerator/denominator pair.
+    /// Returns the frame rate.
     ///
-    /// Frame rate is expressed in frames per second. For example:
-    /// - `(60, 1)` = 60 fps
-    /// - `(30000, 1001)` ≈ 29.97 fps
-    /// - `(25, 1)` = 25 fps
+    /// Frame rate is expressed in frames per second. For example, a frame rate of 60 fps
+    /// would be represented as `FrameRate::fps_60()`, and 29.97 fps (NTSC) would be
+    /// `FrameRate::fps_29_97()`.
     ///
     /// # Returns
     ///
-    /// A tuple of `(numerator, denominator)`.
+    /// A `FrameRate` struct. Use `.numerator()`, `.denominator()`, or `.value()` to access the components.
     ///
     /// This is only meaningful for video frames.
-    pub fn frame_rate(&self) -> (i32, i32) {
-        (self.raw().FrameRateN, self.raw().FrameRateD)
+    pub fn frame_rate(&self) -> FrameRate {
+        // SAFETY: FFI data is expected to contain valid positive frame rate values.
+        // The OMT library should ensure these values are valid when creating frames.
+        unsafe { FrameRate::new_unchecked(self.raw().FrameRateN, self.raw().FrameRateD) }
     }
 
     /// Returns the display aspect ratio.
@@ -1019,8 +1012,7 @@ mod tests {
             height,
             stride,
             VideoFlags::NONE,
-            30,
-            1,
+            FrameRate::fps_30(),
             1.77778,
             ColorSpace::BT709,
             -1,
@@ -1127,8 +1119,7 @@ mod tests {
             height,
             stride,
             VideoFlags::NONE,
-            30,
-            1,
+            FrameRate::fps_30(),
             1.33333,
             ColorSpace::BT601,
             5000,
@@ -1168,8 +1159,7 @@ mod tests {
             height,
             stride,
             VideoFlags::NONE,
-            30,
-            1,
+            FrameRate::fps_30(),
             1.33333,
             ColorSpace::BT601,
             5000,
@@ -1206,8 +1196,7 @@ mod tests {
             height,
             stride,
             VideoFlags::NONE,
-            30,
-            1,
+            FrameRate::fps_30(),
             1.33333,
             ColorSpace::BT601,
             5000,
@@ -1245,8 +1234,7 @@ mod tests {
             height,
             stride,
             VideoFlags::NONE,
-            30,
-            1,
+            FrameRate::fps_30(),
             1.33333,
             ColorSpace::BT601,
             5000,
@@ -1271,8 +1259,7 @@ mod tests {
             height,
             stride,
             VideoFlags::NONE,
-            30,
-            1,
+            FrameRate::fps_30(),
             1.33333,
             ColorSpace::BT601,
             5000,
@@ -1341,8 +1328,7 @@ mod tests {
             1080,
             1920 * 4,
             VideoFlags::empty(),
-            30,
-            1,
+            FrameRate::fps_30(),
             16.0 / 9.0,
             ColorSpace::BT709,
             timestamp_video,
@@ -1377,8 +1363,7 @@ mod tests {
             480,
             640 * 4,
             VideoFlags::empty(),
-            25,
-            1,
+            FrameRate::fps_25(),
             4.0 / 3.0,
             ColorSpace::BT709,
             -1,

@@ -56,14 +56,13 @@ fn main() {
             Ok(Some(frame)) => {
                 let codec = frame.codec().fourcc_string();
                 let flags = describe_video_flags(frame.flags());
-                let (fr_n, fr_d) = frame.frame_rate();
+                let frame_rate = frame.frame_rate();
 
                 info!(
-                    "  -> Video: {}x{} @ {}/{} fps, codec {}, flags [{}], colorspace {:?}",
+                    "  -> Video: {}x{} @ {}, codec {}, flags [{}], colorspace {:?}",
                     frame.width(),
                     frame.height(),
-                    fr_n,
-                    fr_d,
+                    frame_rate,
                     codec,
                     flags,
                     frame.color_space()

@@ -552,7 +552,7 @@ unsafe impl Sync for Receiver {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Codec, ColorSpace, VideoFlags};
+    use crate::types::{Codec, ColorSpace, FrameRate, VideoFlags};
 
     #[test]
     fn test_send_metadata_with_metadata_frame() {
@@ -604,8 +604,7 @@ mod tests {
             480,
             640 * 4,
             VideoFlags::NONE,
-            30,
-            1,
+            FrameRate::fps_30(),
             1.33333,
             ColorSpace::BT601,
             -1,

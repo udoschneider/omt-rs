@@ -1,6 +1,6 @@
 use omt::{
-    Address, Codec, ColorSpace, FrameType, MediaFrame, Name, PreferredVideoFormat, Quality,
-    ReceiveFlags, Receiver, Sender, Timeout, VideoFlags,
+    Address, Codec, ColorSpace, FrameRate, FrameType, MediaFrame, Name, PreferredVideoFormat,
+    Quality, ReceiveFlags, Receiver, Sender, Timeout, VideoFlags,
 };
 use std::collections::HashSet;
 use std::path::Path;
@@ -31,8 +31,7 @@ fn sender_receiver_transfers_testcard() {
         height,
         width * 4,
         VideoFlags::NONE,
-        30,
-        1,
+        FrameRate::fps_30(),
         1.0,
         ColorSpace::BT601,
         -1,

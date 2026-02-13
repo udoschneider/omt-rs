@@ -1,5 +1,8 @@
 use log::{error, info};
-use omt::{Codec, ColorSpace, MediaFrame, Name, Quality, Sender, SenderInfo, Timeout, VideoFlags};
+use omt::{
+    Codec, ColorSpace, FrameRate, MediaFrame, Name, Quality, Sender, SenderInfo, Timeout,
+    VideoFlags,
+};
 use std::env;
 use std::f32::consts::TAU;
 use std::path::Path;
@@ -33,8 +36,7 @@ fn main() {
         height,
         width * 4,
         VideoFlags::NONE,
-        30,
-        1,
+        FrameRate::fps_30(),
         1.0,
         ColorSpace::Undefined,
         -1,

@@ -23,6 +23,6 @@ pub use settings::{
     settings_set_string,
 };
 pub use types::{
-    Address, Codec, ColorSpace, FrameType, MediaFrame, Name, PreferredVideoFormat, Quality,
-    ReceiveFlags, SenderInfo, Statistics, Tally, Timeout, VideoFlags,
+    Address, Codec, ColorSpace, FrameRate, FrameType, MediaFrame, Name, PreferredVideoFormat,
+    Quality, ReceiveFlags, SenderInfo, Statistics, Tally, Timeout, VideoFlags,
 };

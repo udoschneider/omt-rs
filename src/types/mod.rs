@@ -33,6 +33,9 @@ pub use codec::Codec;
 mod color_space;
 pub use color_space::ColorSpace;
 
+mod frame_rate;
+pub use frame_rate::FrameRate;
+
 mod frame_type;
 pub use frame_type::FrameType;
 
