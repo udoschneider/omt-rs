@@ -99,104 +99,98 @@ impl FrameRate {
         })
     }
 
-    /// Creates a new frame rate from a numerator and denominator without validation.
-    ///
-    /// # Safety
-    ///
-    /// This function does not validate the inputs. The caller must ensure that:
-    /// - `numerator` is positive (> 0)
-    /// - `denominator` is positive (> 0)
-    ///
-    /// Using invalid values may lead to undefined behavior when calculating frame rate values.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use omt::FrameRate;
-    ///
-    /// // SAFETY: We know 60 and 1 are valid positive values
-    /// let fps = unsafe { FrameRate::new_unchecked(60, 1) };
-    /// assert_eq!(fps.value(), 60.0);
-    /// ```
-    pub const unsafe fn new_unchecked(numerator: i32, denominator: i32) -> Self {
-        Self {
-            frame_rate_n: numerator,
-            frame_rate_d: denominator,
-        }
-    }
-
     /// Creates a frame rate of 23.976 fps (24000/1001).
     ///
     /// This is commonly used for film content in NTSC regions.
     pub fn fps_23_976() -> Self {
-        // SAFETY: 24000 and 1001 are valid positive values
-        unsafe { Self::new_unchecked(24000, 1001) }
+        Self {
+            frame_rate_n: 24000,
+            frame_rate_d: 1001,
+        }
     }
 
     /// Creates a frame rate of 24 fps.
     ///
     /// This is the standard film frame rate.
     pub fn fps_24() -> Self {
-        // SAFETY: 24 and 1 are valid positive values
-        unsafe { Self::new_unchecked(24, 1) }
+        Self {
+            frame_rate_n: 24,
+            frame_rate_d: 1,
+        }
     }
 
     /// Creates a frame rate of 25 fps.
     ///
     /// This is the standard PAL video frame rate.
     pub fn fps_25() -> Self {
-        // SAFETY: 25 and 1 are valid positive values
-        unsafe { Self::new_unchecked(25, 1) }
+        Self {
+            frame_rate_n: 25,
+            frame_rate_d: 1,
+        }
     }
 
     /// Creates a frame rate of 29.97 fps (30000/1001).
     ///
     /// This is the standard NTSC video frame rate.
     pub fn fps_29_97() -> Self {
-        // SAFETY: 30000 and 1001 are valid positive values
-        unsafe { Self::new_unchecked(30000, 1001) }
+        Self {
+            frame_rate_n: 30000,
+            frame_rate_d: 1001,
+        }
     }
 
     /// Creates a frame rate of 30 fps.
     pub fn fps_30() -> Self {
-        // SAFETY: 30 and 1 are valid positive values
-        unsafe { Self::new_unchecked(30, 1) }
+        Self {
+            frame_rate_n: 30,
+            frame_rate_d: 1,
+        }
     }
 
     /// Creates a frame rate of 50 fps.
     ///
     /// This is commonly used for high frame rate PAL content.
     pub fn fps_50() -> Self {
-        // SAFETY: 50 and 1 are valid positive values
-        unsafe { Self::new_unchecked(50, 1) }
+        Self {
+            frame_rate_n: 50,
+            frame_rate_d: 1,
+        }
     }
 
     /// Creates a frame rate of 59.94 fps (60000/1001).
     ///
     /// This is commonly used for high frame rate NTSC content.
     pub fn fps_59_94() -> Self {
-        // SAFETY: 60000 and 1001 are valid positive values
-        unsafe { Self::new_unchecked(60000, 1001) }
+        Self {
+            frame_rate_n: 60000,
+            frame_rate_d: 1001,
+        }
     }
 
     /// Creates a frame rate of 60 fps.
     pub fn fps_60() -> Self {
-        // SAFETY: 60 and 1 are valid positive values
-        unsafe { Self::new_unchecked(60, 1) }
+        Self {
+            frame_rate_n: 60,
+            frame_rate_d: 1,
+        }
     }
 
     /// Creates a frame rate of 119.88 fps (120000/1001).
     ///
     /// This is commonly used for very high frame rate NTSC content.
     pub fn fps_119_88() -> Self {
-        // SAFETY: 120000 and 1001 are valid positive values
-        unsafe { Self::new_unchecked(120000, 1001) }
+        Self {
+            frame_rate_n: 120000,
+            frame_rate_d: 1001,
+        }
     }
 
     /// Creates a frame rate of 120 fps.
     pub fn fps_120() -> Self {
-        // SAFETY: 120 and 1 are valid positive values
-        unsafe { Self::new_unchecked(120, 1) }
+        Self {
+            frame_rate_n: 120,
+            frame_rate_d: 1,
+        }
     }
 
     /// Returns the frame rate numerator.
@@ -331,8 +325,11 @@ mod tests {
 
     #[test]
     fn test_new_unchecked() {
-        // SAFETY: We're using valid values for testing
-        let fps = unsafe { FrameRate::new_unchecked(30, 1) };
+        // Test direct struct construction (internal use only)
+        let fps = FrameRate {
+            frame_rate_n: 30,
+            frame_rate_d: 1,
+        };
         assert_eq!(fps.numerator(), 30);
         assert_eq!(fps.denominator(), 1);
         assert_eq!(fps.value(), 30.0);

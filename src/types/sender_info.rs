@@ -135,3 +135,143 @@ impl From<&SenderInfo> for ffi::OMTSenderInfo {
         raw
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sender_info_new() {
+        let info = SenderInfo::new();
+        assert_eq!(info.product_name, "");
+        assert_eq!(info.manufacturer, "");
+        assert_eq!(info.version, "");
+        assert_eq!(info.reserved1, "");
+        assert_eq!(info.reserved2, "");
+        assert_eq!(info.reserved3, "");
+    }
+
+    #[test]
+    fn test_sender_info_default() {
+        let info = SenderInfo::default();
+        assert_eq!(info.product_name, "");
+        assert_eq!(info.manufacturer, "");
+        assert_eq!(info.version, "");
+    }
+
+    #[test]
+    fn test_with_product_name() {
+        let info = SenderInfo::new().with_product_name("Professional Camera");
+        assert_eq!(info.product_name, "Professional Camera");
+    }
+
+    #[test]
+    fn test_with_manufacturer() {
+        let info = SenderInfo::new().with_manufacturer("ACME Corp");
+        assert_eq!(info.manufacturer, "ACME Corp");
+    }
+
+    #[test]
+    fn test_with_version() {
+        let info = SenderInfo::new().with_version("1.0.0");
+        assert_eq!(info.version, "1.0.0");
+    }
+
+    #[test]
+    fn test_with_reserved1() {
+        let info = SenderInfo::new().with_reserved1("reserved1");
+        assert_eq!(info.reserved1, "reserved1");
+    }
+
+    #[test]
+    fn test_with_reserved2() {
+        let info = SenderInfo::new().with_reserved2("reserved2");
+        assert_eq!(info.reserved2, "reserved2");
+    }
+
+    #[test]
+    fn test_with_reserved3() {
+        let info = SenderInfo::new().with_reserved3("reserved3");
+        assert_eq!(info.reserved3, "reserved3");
+    }
+
+    #[test]
+    fn test_builder_chain() {
+        let info = SenderInfo::new()
+            .with_product_name("Camera")
+            .with_manufacturer("ACME")
+            .with_version("2.0");
+        assert_eq!(info.product_name, "Camera");
+        assert_eq!(info.manufacturer, "ACME");
+        assert_eq!(info.version, "2.0");
+    }
+
+    #[test]
+    fn test_with_all_fields() {
+        let info = SenderInfo::new()
+            .with_product_name("Product")
+            .with_manufacturer("Manufacturer")
+            .with_version("Version")
+            .with_reserved1("R1")
+            .with_reserved2("R2")
+            .with_reserved3("R3");
+        assert_eq!(info.product_name, "Product");
+        assert_eq!(info.manufacturer, "Manufacturer");
+        assert_eq!(info.version, "Version");
+        assert_eq!(info.reserved1, "R1");
+        assert_eq!(info.reserved2, "R2");
+        assert_eq!(info.reserved3, "R3");
+    }
+
+    #[test]
+    fn test_clone() {
+        let info1 = SenderInfo::new().with_product_name("Test");
+        let info2 = info1.clone();
+        assert_eq!(info1.product_name, info2.product_name);
+    }
+
+    #[test]
+    fn test_debug() {
+        let info = SenderInfo::new().with_product_name("Test");
+        let debug_str = format!("{:?}", info);
+        assert!(debug_str.contains("SenderInfo"));
+        assert!(debug_str.contains("Test"));
+    }
+
+    #[test]
+    fn test_from_ffi_with_empty_fields() {
+        let ffi_info = ffi::OMTSenderInfo {
+            ProductName: [0; ffi::OMT_MAX_STRING_LENGTH],
+            Manufacturer: [0; ffi::OMT_MAX_STRING_LENGTH],
+            Version: [0; ffi::OMT_MAX_STRING_LENGTH],
+            Reserved1: [0; ffi::OMT_MAX_STRING_LENGTH],
+            Reserved2: [0; ffi::OMT_MAX_STRING_LENGTH],
+            Reserved3: [0; ffi::OMT_MAX_STRING_LENGTH],
+        };
+        let result = Option::<SenderInfo>::from(&ffi_info);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_to_ffi_conversion() {
+        let info = SenderInfo::new()
+            .with_product_name("TestProduct")
+            .with_manufacturer("TestManufacturer")
+            .with_version("1.2.3");
+        let ffi_info: ffi::OMTSenderInfo = (&info).into();
+
+        // Verify the conversion happened (actual verification would need ffi_utils)
+        let _ = ffi_info;
+    }
+
+    #[test]
+    fn test_with_string_types() {
+        let info = SenderInfo::new()
+            .with_product_name(String::from("Product"))
+            .with_manufacturer("Manufacturer")
+            .with_version(format!("v{}", 1));
+        assert_eq!(info.product_name, "Product");
+        assert_eq!(info.manufacturer, "Manufacturer");
+        assert_eq!(info.version, "v1");
+    }
+}

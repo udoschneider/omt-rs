@@ -535,6 +535,9 @@ impl<'a> MediaFrame<'a> {
             return None;
         }
         let len = raw.DataLength as usize;
+        // SAFETY: We checked that Data is non-null and DataLength is positive.
+        // The FFI layer ensures Data points to valid memory of at least DataLength bytes.
+        // The lifetime is tied to the MediaFrame which owns or borrows the data.
         Some(unsafe { std::slice::from_raw_parts(raw.Data as *const u8, len) })
     }
 
@@ -557,6 +560,9 @@ impl<'a> MediaFrame<'a> {
             return None;
         }
         let len = raw.CompressedLength as usize;
+        // SAFETY: We checked that CompressedData is non-null and CompressedLength is positive.
+        // The FFI layer ensures CompressedData points to valid memory of at least CompressedLength bytes.
+        // The lifetime is tied to the MediaFrame which owns or borrows the data.
         Some(unsafe { std::slice::from_raw_parts(raw.CompressedData as *const u8, len) })
     }
 
@@ -576,6 +582,9 @@ impl<'a> MediaFrame<'a> {
             return None;
         }
         let len = raw.FrameMetadataLength as usize;
+        // SAFETY: We checked that FrameMetadata is non-null and FrameMetadataLength is positive.
+        // The FFI layer ensures FrameMetadata points to valid UTF-8 memory of at least FrameMetadataLength bytes.
+        // The lifetime is tied to the MediaFrame which owns or borrows the data.
         let slice = unsafe { std::slice::from_raw_parts(raw.FrameMetadata as *const u8, len) };
         Some(without_null_terminator(slice))
     }
@@ -809,9 +818,10 @@ impl<'a> MediaFrame<'a> {
     ///
     /// This is only meaningful for video frames.
     pub fn frame_rate(&self) -> FrameRate {
-        // SAFETY: FFI data is expected to contain valid positive frame rate values.
-        // The OMT library should ensure these values are valid when creating frames.
-        unsafe { FrameRate::new_unchecked(self.raw().FrameRateN, self.raw().FrameRateD) }
+        // FFI data should contain valid positive frame rate values.
+        // Fall back to 30fps if the data is invalid (should not happen in practice).
+        FrameRate::new(self.raw().FrameRateN, self.raw().FrameRateD)
+            .unwrap_or_else(|_| FrameRate::fps_30())
     }
 
     /// Returns the display aspect ratio.
@@ -990,6 +1000,9 @@ impl<'a> MediaFrame<'a> {
             return None;
         }
         let len = raw.DataLength as usize;
+        // SAFETY: We checked that Data is non-null and DataLength is positive.
+        // For metadata frames, Data contains UTF-8 XML string data.
+        // The lifetime is tied to the MediaFrame which owns or borrows the data.
         let slice = unsafe { std::slice::from_raw_parts(raw.Data as *const u8, len) };
         Some(without_null_terminator(slice))
     }

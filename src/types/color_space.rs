@@ -36,3 +36,76 @@ impl From<ColorSpace> for ffi::OMTColorSpace {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_from_ffi_bt601() {
+        let cs = ColorSpace::from(ffi::OMTColorSpace::BT601);
+        assert_eq!(cs, ColorSpace::BT601);
+    }
+
+    #[test]
+    fn test_from_ffi_bt709() {
+        let cs = ColorSpace::from(ffi::OMTColorSpace::BT709);
+        assert_eq!(cs, ColorSpace::BT709);
+    }
+
+    #[test]
+    fn test_from_ffi_undefined() {
+        let cs = ColorSpace::from(ffi::OMTColorSpace::Undefined);
+        assert_eq!(cs, ColorSpace::Undefined);
+    }
+
+    #[test]
+    fn test_to_ffi_bt601() {
+        let ffi_cs: ffi::OMTColorSpace = ColorSpace::BT601.into();
+        assert_eq!(ffi_cs as i32, ffi::OMTColorSpace::BT601 as i32);
+    }
+
+    #[test]
+    fn test_to_ffi_bt709() {
+        let ffi_cs: ffi::OMTColorSpace = ColorSpace::BT709.into();
+        assert_eq!(ffi_cs as i32, ffi::OMTColorSpace::BT709 as i32);
+    }
+
+    #[test]
+    fn test_to_ffi_undefined() {
+        let ffi_cs: ffi::OMTColorSpace = ColorSpace::Undefined.into();
+        assert_eq!(ffi_cs as i32, ffi::OMTColorSpace::Undefined as i32);
+    }
+
+    #[test]
+    fn test_clone() {
+        let cs1 = ColorSpace::BT709;
+        let cs2 = cs1.clone();
+        assert_eq!(cs1, cs2);
+    }
+
+    #[test]
+    fn test_copy() {
+        let cs1 = ColorSpace::BT601;
+        let cs2 = cs1;
+        assert_eq!(cs1, ColorSpace::BT601);
+        assert_eq!(cs2, ColorSpace::BT601);
+    }
+
+    #[test]
+    fn test_eq() {
+        assert_eq!(ColorSpace::BT601, ColorSpace::BT601);
+        assert_eq!(ColorSpace::BT709, ColorSpace::BT709);
+        assert_eq!(ColorSpace::Undefined, ColorSpace::Undefined);
+        assert_ne!(ColorSpace::BT601, ColorSpace::BT709);
+        assert_ne!(ColorSpace::BT601, ColorSpace::Undefined);
+        assert_ne!(ColorSpace::BT709, ColorSpace::Undefined);
+    }
+
+    #[test]
+    fn test_debug() {
+        assert_eq!(format!("{:?}", ColorSpace::BT601), "BT601");
+        assert_eq!(format!("{:?}", ColorSpace::BT709), "BT709");
+        assert_eq!(format!("{:?}", ColorSpace::Undefined), "Undefined");
+    }
+}

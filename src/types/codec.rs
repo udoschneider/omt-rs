@@ -274,4 +274,59 @@ mod tests {
         assert_eq!(fourcc_to_string(0x00000000), "....");
         assert_eq!(fourcc_to_string(0x01020304), "....");
     }
+
+    #[test]
+    fn test_codec_to_ffi() {
+        assert_eq!(Codec::VMX1.to_ffi() as i32, ffi::OMTCodec::VMX1 as i32);
+        assert_eq!(Codec::FPA1.to_ffi() as i32, ffi::OMTCodec::FPA1 as i32);
+        assert_eq!(Codec::UYVY.to_ffi() as i32, ffi::OMTCodec::UYVY as i32);
+        assert_eq!(Codec::YUY2.to_ffi() as i32, ffi::OMTCodec::YUY2 as i32);
+        assert_eq!(Codec::BGRA.to_ffi() as i32, ffi::OMTCodec::BGRA as i32);
+        assert_eq!(Codec::NV12.to_ffi() as i32, ffi::OMTCodec::NV12 as i32);
+        assert_eq!(Codec::YV12.to_ffi() as i32, ffi::OMTCodec::YV12 as i32);
+        assert_eq!(Codec::UYVA.to_ffi() as i32, ffi::OMTCodec::UYVA as i32);
+        assert_eq!(Codec::P216.to_ffi() as i32, ffi::OMTCodec::P216 as i32);
+        assert_eq!(Codec::PA16.to_ffi() as i32, ffi::OMTCodec::PA16 as i32);
+    }
+
+    #[test]
+    fn test_codec_to_ffi_unknown() {
+        // Unknown codec should map to VMX1
+        assert_eq!(
+            Codec::Unknown(999).to_ffi() as i32,
+            ffi::OMTCodec::VMX1 as i32
+        );
+    }
+
+    #[test]
+    fn test_fourcc_to_string_edge_cases() {
+        use super::fourcc_to_string;
+
+        // Test with boundary characters (ASCII 31, 32, 126, 127)
+        // Note: FOURCC is little-endian, so bytes are in reverse order
+        assert_eq!(fourcc_to_string(0x2120201F), ".  !"); // bytes: 31, 32, 32, 33
+        assert_eq!(fourcc_to_string(0x7F7E7F7E), "~.~."); // bytes: 126, 127, 126, 127
+    }
+
+    #[test]
+    fn test_fourcc_to_string_all_codecs() {
+        // Verify fourcc_string works for all codec variants
+        assert_eq!(Codec::VMX1.fourcc_string().len(), 4);
+        assert_eq!(Codec::FPA1.fourcc_string().len(), 4);
+        assert_eq!(Codec::UYVY.fourcc_string().len(), 4);
+        assert_eq!(Codec::YUY2.fourcc_string().len(), 4);
+        assert_eq!(Codec::BGRA.fourcc_string().len(), 4);
+        assert_eq!(Codec::NV12.fourcc_string().len(), 4);
+        assert_eq!(Codec::YV12.fourcc_string().len(), 4);
+        assert_eq!(Codec::UYVA.fourcc_string().len(), 4);
+        assert_eq!(Codec::P216.fourcc_string().len(), 4);
+        assert_eq!(Codec::PA16.fourcc_string().len(), 4);
+    }
+
+    #[test]
+    fn test_codec_unknown_preserves_value() {
+        let value = 0x12345678;
+        let codec = Codec::Unknown(value);
+        assert_eq!(codec.fourcc(), value as u32);
+    }
 }

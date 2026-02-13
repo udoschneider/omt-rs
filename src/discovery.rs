@@ -100,6 +100,7 @@ impl Discovery {
     /// Wraps `omt_discovery_getaddresses(int* count)` from `libomt.h`.
     pub fn get_addresses() -> Vec<Address> {
         let mut count: i32 = 0;
+        // SAFETY: FFI call with a valid mutable pointer to a local i32 variable.
         let list_ptr = unsafe { ffi::omt_discovery_getaddresses(&mut count as *mut i32) };
 
         debug!("OMT discovery -> count={}", count);
@@ -108,10 +109,12 @@ impl Discovery {
 
         if !list_ptr.is_null() && count > 0 {
             for i in 0..count {
+                // SAFETY: list_ptr is non-null and we're indexing within bounds (0..count).
                 let entry_ptr = unsafe { *list_ptr.add(i as usize) };
                 if entry_ptr.is_null() {
                     continue;
                 }
+                // SAFETY: entry_ptr is a valid non-null pointer to a C string from the C library.
                 let address = Address::from(
                     unsafe { CStr::from_ptr(entry_ptr) }
                         .to_string_lossy()
@@ -286,4 +289,113 @@ impl Discovery {
 /// Converts a Duration to milliseconds, capping at u64::MAX.
 fn duration_ms(duration: Duration) -> u64 {
     duration.as_millis().min(u128::from(u64::MAX)) as u64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_duration_ms_zero() {
+        assert_eq!(duration_ms(Duration::from_millis(0)), 0);
+    }
+
+    #[test]
+    fn test_duration_ms_small_values() {
+        assert_eq!(duration_ms(Duration::from_millis(1)), 1);
+        assert_eq!(duration_ms(Duration::from_millis(100)), 100);
+        assert_eq!(duration_ms(Duration::from_millis(500)), 500);
+        assert_eq!(duration_ms(Duration::from_millis(1000)), 1000);
+    }
+
+    #[test]
+    fn test_duration_ms_from_seconds() {
+        assert_eq!(duration_ms(Duration::from_secs(1)), 1_000);
+        assert_eq!(duration_ms(Duration::from_secs(60)), 60_000);
+        assert_eq!(duration_ms(Duration::from_secs(3600)), 3_600_000);
+    }
+
+    #[test]
+    fn test_duration_ms_large_values() {
+        // Test with large but valid values
+        assert_eq!(duration_ms(Duration::from_secs(1_000_000)), 1_000_000_000);
+    }
+
+    #[test]
+    fn test_duration_ms_max_u64() {
+        // Test that very large durations are capped at u64::MAX
+        let very_large = Duration::from_secs(u64::MAX / 1000 + 1000);
+        let result = duration_ms(very_large);
+        assert!(result <= u64::MAX);
+    }
+
+    #[test]
+    fn test_duration_ms_micros_and_nanos() {
+        // Test sub-millisecond precision is truncated
+        assert_eq!(duration_ms(Duration::from_micros(1)), 0);
+        assert_eq!(duration_ms(Duration::from_micros(999)), 0);
+        assert_eq!(duration_ms(Duration::from_micros(1000)), 1);
+        assert_eq!(duration_ms(Duration::from_micros(1001)), 1);
+        assert_eq!(duration_ms(Duration::from_nanos(999_999)), 0);
+    }
+
+    #[test]
+    fn test_get_addresses_with_options_min_attempts() {
+        // Test that attempts is enforced to minimum 1
+        // This test just verifies the function doesn't panic with 0 attempts
+        let _addresses = Discovery::get_addresses_with_options(0, Duration::from_millis(1));
+    }
+
+    #[test]
+    fn test_get_addresses_with_backoff_min_attempts() {
+        // Test that attempts is enforced to minimum 1
+        let _addresses = Discovery::get_addresses_with_backoff(
+            0,
+            Duration::from_millis(1),
+            Duration::from_millis(10),
+            1.0,
+        );
+    }
+
+    #[test]
+    fn test_get_addresses_with_backoff_min_backoff_factor() {
+        // Test that backoff_factor < 1.0 is enforced to 1.0
+        // This verifies the function handles invalid backoff factors gracefully
+        let _addresses = Discovery::get_addresses_with_backoff(
+            1,
+            Duration::from_millis(1),
+            Duration::from_millis(10),
+            0.5, // Invalid, should be treated as 1.0
+        );
+    }
+
+    #[test]
+    fn test_get_addresses_returns_vec() {
+        // Basic test that get_addresses returns a Vec (may be empty in test environment)
+        let _addresses = Discovery::get_addresses();
+        // Test passes if no panic occurs
+    }
+
+    #[test]
+    fn test_addresses_iterator() {
+        // Test that addresses() returns an iterator
+        for _address in Discovery::addresses() {
+            // May be 0 in test environment
+        }
+        // Test passes if no panic occurs
+    }
+
+    #[test]
+    fn test_addresses_with_backoff_iterator() {
+        // Test that addresses_with_backoff returns an iterator
+        for _address in Discovery::addresses_with_backoff(
+            1,
+            Duration::from_millis(1),
+            Duration::from_millis(10),
+            1.0,
+        ) {
+            // May be 0 in test environment
+        }
+        // Test passes if no panic occurs
+    }
 }

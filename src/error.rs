@@ -13,3 +13,27 @@ pub enum Error {
     #[error("string contained an interior null byte")]
     InvalidCString,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_null_handle_display() {
+        let error = Error::NullHandle;
+        assert_eq!(error.to_string(), "libomt returned a null handle");
+    }
+
+    #[test]
+    fn test_invalid_cstring_display() {
+        let error = Error::InvalidCString;
+        assert_eq!(error.to_string(), "string contained an interior null byte");
+    }
+
+    #[test]
+    fn test_error_debug() {
+        let error = Error::NullHandle;
+        let debug_str = format!("{:?}", error);
+        assert!(debug_str.contains("NullHandle"));
+    }
+}

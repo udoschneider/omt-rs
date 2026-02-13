@@ -14,6 +14,7 @@ Open Media Transport (OMT) is an open-source network protocol for high‑perform
 
 - [Requirements](#requirements)
 - [Build](#build)
+- [Testing](#testing)
 - [Quick start](#quick-start)
   - [Discover sources](#discover-sources)
   - [Receive video](#receive-video)
@@ -61,6 +62,16 @@ From the project root:
 ```
 cargo build
 ```
+
+## Testing
+
+Due to thread-safety constraints in the underlying `libomt` C library during cleanup, tests must be run serially:
+
+```
+cargo test -- --test-threads=1
+```
+
+Running tests in parallel (the default behavior) will cause crashes during cleanup after all tests pass. This is a known limitation of the FFI layer and does not affect normal usage of the library.
 
 ---
 

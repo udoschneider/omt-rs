@@ -19,6 +19,7 @@ log = "0.4"
 yuv = "0.8.10"
 rgb = "0.8.52"
 thiserror = "2.0.18"
+uuid = { version = "1.11", features = ["v7"] }
 
 
 [dev-dependencies]

@@ -120,6 +120,29 @@ pub struct OMTStatistics {
     pub Reserved7: c_longlong,
 }
 
+impl Default for OMTStatistics {
+    fn default() -> Self {
+        Self {
+            BytesSent: 0,
+            BytesReceived: 0,
+            BytesSentSinceLast: 0,
+            BytesReceivedSinceLast: 0,
+            Frames: 0,
+            FramesSinceLast: 0,
+            FramesDropped: 0,
+            CodecTime: 0,
+            CodecTimeSinceLast: 0,
+            Reserved1: 0,
+            Reserved2: 0,
+            Reserved3: 0,
+            Reserved4: 0,
+            Reserved5: 0,
+            Reserved6: 0,
+            Reserved7: 0,
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct OMTMediaFrame {

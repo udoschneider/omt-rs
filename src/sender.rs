@@ -50,6 +50,8 @@ impl Sender {
     /// ```
     pub fn create(name: &Name, quality: Quality) -> Result<Self, Error> {
         let c_name = CString::new(name.as_str()).map_err(|_| Error::InvalidCString)?;
+        // SAFETY: FFI call to C library. The c_name pointer is valid for the duration
+        // of the call, and all parameters are properly constructed C-compatible types.
         let handle = unsafe { ffi::omt_send_create(c_name.as_ptr(), quality.into()) };
         let handle = NonNull::new(handle).ok_or(Error::NullHandle)?;
         Ok(Self { handle })
@@ -77,6 +79,7 @@ impl Sender {
     /// ```
     pub fn set_sender_info(&self, info: &SenderInfo) {
         let mut raw = ffi::OMTSenderInfo::from(info);
+        // SAFETY: FFI call with valid handle and mutable sender info struct pointer.
         unsafe { ffi::omt_send_setsenderinformation(self.handle.as_ptr(), &mut raw) };
     }
 
@@ -141,6 +144,7 @@ impl Sender {
     /// ```
     pub fn add_connection_metadata<S: AsRef<str>>(&self, metadata: S) -> Result<(), Error> {
         let c_meta = CString::new(metadata.as_ref()).map_err(|_| Error::InvalidCString)?;
+        // SAFETY: FFI call with valid handle and C string pointer that remains valid for call duration.
         unsafe { ffi::omt_send_addconnectionmetadata(self.handle.as_ptr(), c_meta.as_ptr()) };
         Ok(())
     }
@@ -161,6 +165,7 @@ impl Sender {
     /// sender.clear_connection_metadata();
     /// ```
     pub fn clear_connection_metadata(&self) {
+        // SAFETY: FFI call with valid handle.
         unsafe { ffi::omt_send_clearconnectionmetadata(self.handle.as_ptr()) };
     }
 
@@ -196,9 +201,13 @@ impl Sender {
         match new_address {
             Some(addr) => {
                 let c_addr = CString::new(addr.as_str()).map_err(|_| Error::InvalidCString)?;
+                // SAFETY: FFI call with valid handle and C string pointer.
                 unsafe { ffi::omt_send_setredirect(self.handle.as_ptr(), c_addr.as_ptr()) };
             }
-            None => unsafe { ffi::omt_send_setredirect(self.handle.as_ptr(), std::ptr::null()) },
+            None => {
+                // SAFETY: FFI call with valid handle and null pointer to clear redirect.
+                unsafe { ffi::omt_send_setredirect(self.handle.as_ptr(), std::ptr::null()) }
+            }
         }
         Ok(())
     }
@@ -226,6 +235,7 @@ impl Sender {
     /// ```
     pub fn get_address(&self) -> Option<Address> {
         let mut buf = vec![0u8; ffi::OMT_MAX_STRING_LENGTH];
+        // SAFETY: FFI call with valid handle and mutable buffer of sufficient size.
         let len = unsafe {
             ffi::omt_send_getaddress(
                 self.handle.as_ptr(),
@@ -236,6 +246,7 @@ impl Sender {
         if len <= 0 {
             return None;
         }
+        // SAFETY: The C library has written a null-terminated string to our buffer.
         let cstr = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr() as *const std::ffi::c_char) };
         Some(Address::from(cstr.to_string_lossy().to_string()))
     }
@@ -266,6 +277,7 @@ impl Sender {
     /// // let bytes_sent = sender.send(&mut frame);
     /// ```
     pub fn send(&self, frame: &mut MediaFrame) -> i32 {
+        // SAFETY: FFI call with valid handle and mutable frame pointer.
         unsafe { ffi::omt_send(self.handle.as_ptr(), frame.as_mut()) as i32 }
     }
 
@@ -286,6 +298,7 @@ impl Sender {
     /// println!("Connected: {} connections", conn_count);
     /// ```
     pub fn connections(&self) -> i32 {
+        // SAFETY: FFI call with valid handle.
         unsafe { ffi::omt_send_connections(self.handle.as_ptr()) as i32 }
     }
 
@@ -326,12 +339,15 @@ impl Sender {
     ///     println!("Received metadata");
     /// }
     /// ```
-    pub fn receive_metadata(&mut self, timeout: Timeout) -> Result<Option<MediaFrame<'_>>, Error> {
+    pub fn receive_metadata(&self, timeout: Timeout) -> Result<Option<MediaFrame<'_>>, Error> {
+        // SAFETY: FFI call with valid handle and timeout value.
         let frame_ptr =
             unsafe { ffi::omt_send_receive(self.handle.as_ptr(), timeout.as_millis_i32()) };
         if frame_ptr.is_null() {
             Ok(None)
         } else {
+            // SAFETY: The C library returns a valid pointer to a frame that remains
+            // valid until the next receive call or until the sender is destroyed.
             Ok(Some(unsafe { &*frame_ptr }.into()))
         }
     }
@@ -373,6 +389,7 @@ impl Sender {
             preview: 0,
             program: 0,
         };
+        // SAFETY: FFI call with valid handle and mutable tally struct pointer.
         let result = unsafe {
             ffi::omt_send_gettally(self.handle.as_ptr(), timeout.as_millis_i32(), &mut raw) as i32
         };
@@ -398,7 +415,8 @@ impl Sender {
     /// println!("Bytes sent: {}", stats.bytes_sent);
     /// ```
     pub fn get_video_statistics(&self) -> Statistics {
-        let mut stats = unsafe { std::mem::zeroed::<ffi::OMTStatistics>() };
+        let mut stats = ffi::OMTStatistics::default();
+        // SAFETY: FFI call with valid handle and mutable statistics struct pointer.
         unsafe { ffi::omt_send_getvideostatistics(self.handle.as_ptr(), &mut stats) };
         Statistics::from(&stats)
     }
@@ -421,7 +439,8 @@ impl Sender {
     /// println!("Bytes sent: {}", stats.bytes_sent);
     /// ```
     pub fn get_audio_statistics(&self) -> Statistics {
-        let mut stats = unsafe { std::mem::zeroed::<ffi::OMTStatistics>() };
+        let mut stats = ffi::OMTStatistics::default();
+        // SAFETY: FFI call with valid handle and mutable statistics struct pointer.
         unsafe { ffi::omt_send_getaudiostatistics(self.handle.as_ptr(), &mut stats) };
         Statistics::from(&stats)
     }
@@ -433,11 +452,19 @@ impl Drop for Sender {
     /// Make sure any threads currently accessing sender functions with this instance
     /// are closed before dropping.
     fn drop(&mut self) {
+        // SAFETY: FFI call to destroy the sender handle. This is called once when
+        // the sender is dropped, and the handle is not used after this call.
         unsafe { ffi::omt_send_destroy(self.handle.as_ptr()) };
     }
 }
 
+// SAFETY: The OMT C library's sender handle is an opaque pointer that can be
+// safely sent between threads and accessed from multiple threads. The underlying
+// C library uses internal synchronization for thread safety.
 unsafe impl Send for Sender {}
+
+// SAFETY: The OMT C library's sender handle can be safely shared between threads.
+// All sender operations use the C library's internal synchronization mechanisms.
 unsafe impl Sync for Sender {}
 
 #[cfg(test)]

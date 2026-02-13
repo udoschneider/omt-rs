@@ -159,6 +159,8 @@ impl Receiver {
         flags: ReceiveFlags,
     ) -> Result<Self, Error> {
         let c_address = CString::new(address.as_str()).map_err(|_| Error::InvalidCString)?;
+        // SAFETY: FFI call to C library. The c_address pointer is valid for the duration
+        // of the call, and all parameters are properly constructed C-compatible types.
         let handle = unsafe {
             ffi::omt_receive_create(
                 c_address.as_ptr(),
@@ -238,6 +240,7 @@ impl Receiver {
         frame_types: FrameType,
         timeout: Timeout,
     ) -> Result<Option<MediaFrame<'_>>, Error> {
+        // SAFETY: FFI call to C library with valid handle and parameters.
         let frame_ptr = unsafe {
             ffi::omt_receive(
                 self.handle.as_ptr(),
@@ -248,6 +251,9 @@ impl Receiver {
         if frame_ptr.is_null() {
             Ok(None)
         } else {
+            // SAFETY: The C library returns a valid pointer to a frame that remains
+            // valid until the next receive call or until the receiver is destroyed.
+            // We convert it to a reference with appropriate lifetime.
             Ok(Some(unsafe { &*frame_ptr }.into()))
         }
     }
@@ -313,6 +319,7 @@ impl Receiver {
             );
         }
 
+        // SAFETY: FFI call with valid handle and frame pointer.
         let result = unsafe { ffi::omt_receive_send(self.handle.as_ptr(), frame_ref) };
         Ok(result as i32)
     }
@@ -341,6 +348,7 @@ impl Receiver {
     /// ```
     pub fn set_tally(&self, tally: &Tally) {
         let mut raw: ffi::OMTTally = tally.into();
+        // SAFETY: FFI call with valid handle and tally struct pointer.
         unsafe { ffi::omt_receive_settally(self.handle.as_ptr(), &mut raw) };
     }
 
@@ -381,6 +389,7 @@ impl Receiver {
             preview: 0,
             program: 0,
         };
+        // SAFETY: FFI call with valid handle and mutable tally struct pointer.
         let result = unsafe {
             ffi::omt_receive_gettally(self.handle.as_ptr(), timeout.as_millis_i32(), &mut raw)
                 as i32
@@ -409,6 +418,7 @@ impl Receiver {
     /// receiver.set_flags(ReceiveFlags::PREVIEW);
     /// ```
     pub fn set_flags(&self, flags: ReceiveFlags) {
+        // SAFETY: FFI call with valid handle and flags value.
         unsafe { ffi::omt_receive_setflags(self.handle.as_ptr(), i32::from(flags)) };
     }
 
@@ -437,6 +447,7 @@ impl Receiver {
     /// receiver.set_suggested_quality(Quality::High);
     /// ```
     pub fn set_suggested_quality(&self, quality: Quality) {
+        // SAFETY: FFI call with valid handle and quality value.
         unsafe { ffi::omt_receive_setsuggestedquality(self.handle.as_ptr(), quality.into()) };
     }
 
@@ -481,6 +492,7 @@ impl Receiver {
             Reserved2: [0 as c_char; ffi::OMT_MAX_STRING_LENGTH],
             Reserved3: [0 as c_char; ffi::OMT_MAX_STRING_LENGTH],
         };
+        // SAFETY: FFI call with valid handle and mutable sender info struct pointer.
         unsafe { ffi::omt_receive_getsenderinformation(self.handle.as_ptr(), &mut info) };
         Option::<SenderInfo>::from(&info)
     }
@@ -509,7 +521,8 @@ impl Receiver {
     /// }
     /// ```
     pub fn get_video_statistics(&self) -> Statistics {
-        let mut stats = unsafe { std::mem::zeroed::<ffi::OMTStatistics>() };
+        let mut stats = ffi::OMTStatistics::default();
+        // SAFETY: FFI call with valid handle and mutable statistics struct pointer.
         unsafe { ffi::omt_receive_getvideostatistics(self.handle.as_ptr(), &mut stats) };
         Statistics::from(&stats)
     }
@@ -534,7 +547,8 @@ impl Receiver {
     /// println!("Received {} audio frames, {} bytes", stats.frames, stats.bytes_received);
     /// ```
     pub fn get_audio_statistics(&self) -> Statistics {
-        let mut stats = unsafe { std::mem::zeroed::<ffi::OMTStatistics>() };
+        let mut stats = ffi::OMTStatistics::default();
+        // SAFETY: FFI call with valid handle and mutable statistics struct pointer.
         unsafe { ffi::omt_receive_getaudiostatistics(self.handle.as_ptr(), &mut stats) };
         Statistics::from(&stats)
     }
@@ -542,11 +556,19 @@ impl Receiver {
 
 impl Drop for Receiver {
     fn drop(&mut self) {
+        // SAFETY: FFI call to destroy the receiver handle. This is called once when
+        // the receiver is dropped, and the handle is not used after this call.
         unsafe { ffi::omt_receive_destroy(self.handle.as_ptr()) };
     }
 }
 
+// SAFETY: The OMT C library's receiver handle is an opaque pointer that can be
+// safely sent between threads and accessed from multiple threads. The underlying
+// C library uses internal synchronization for thread safety.
 unsafe impl Send for Receiver {}
+
+// SAFETY: The OMT C library's receiver handle can be safely shared between threads.
+// All receiver operations use the C library's internal synchronization mechanisms.
 unsafe impl Sync for Receiver {}
 
 #[cfg(test)]

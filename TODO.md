@@ -1,1 +1,2 @@
 * rayon for parallel processing
+* create a test in lib with 100 senders/recievers being allocated in parallel and dealocated in other order. Send/Recieve 1000 frames at 50fps each (e.g. 20s duration). Provoke Drop/Panics for debugging

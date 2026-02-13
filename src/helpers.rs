@@ -166,3 +166,145 @@ pub fn discover_matching_sender(sender: Option<&str>, stream: Option<&str>) -> O
 
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_without_null_terminator_with_trailing_null() {
+        let data = b"test\0";
+        assert_eq!(without_null_terminator(data), "test");
+    }
+
+    #[test]
+    fn test_without_null_terminator_without_null() {
+        let data = b"test";
+        assert_eq!(without_null_terminator(data), "test");
+    }
+
+    #[test]
+    fn test_without_null_terminator_multiple_trailing_nulls() {
+        let data = b"test\0\0\0";
+        assert_eq!(without_null_terminator(data), "test");
+    }
+
+    #[test]
+    fn test_without_null_terminator_empty() {
+        let data = b"";
+        assert_eq!(without_null_terminator(data), "");
+    }
+
+    #[test]
+    fn test_without_null_terminator_only_nulls() {
+        let data = b"\0\0\0";
+        assert_eq!(without_null_terminator(data), "");
+    }
+
+    #[test]
+    fn test_without_null_terminator_embedded_nulls() {
+        let data = b"test\0middle\0";
+        assert_eq!(without_null_terminator(data), "test\0middle");
+    }
+
+    #[test]
+    fn test_without_null_terminator_xml_with_null() {
+        let data = b"<test>data</test>\0";
+        assert_eq!(without_null_terminator(data), "<test>data</test>");
+    }
+
+    #[test]
+    fn test_without_null_terminator_single_char() {
+        let data = b"a\0";
+        assert_eq!(without_null_terminator(data), "a");
+    }
+
+    #[test]
+    #[should_panic(expected = "C API returned invalid UTF-8 string")]
+    fn test_without_null_terminator_invalid_utf8() {
+        let data = &[0xFF, 0xFE, 0xFD, 0x00];
+        let _ = without_null_terminator(data);
+    }
+
+    #[test]
+    fn test_null_terminated_bytes_valid() {
+        let result = null_terminated_bytes("test").unwrap();
+        assert_eq!(result, b"test\0");
+    }
+
+    #[test]
+    fn test_null_terminated_bytes_empty() {
+        let result = null_terminated_bytes("").unwrap();
+        assert_eq!(result, b"\0");
+    }
+
+    #[test]
+    fn test_null_terminated_bytes_with_null_fails() {
+        let result = null_terminated_bytes("test\0data");
+        assert!(result.is_err());
+        match result {
+            Err(Error::InvalidCString) => {}
+            _ => panic!("Expected InvalidCString error"),
+        }
+    }
+
+    #[test]
+    fn test_null_terminated_bytes_xml() {
+        let result = null_terminated_bytes("<test>data</test>").unwrap();
+        assert_eq!(result, b"<test>data</test>\0");
+        assert_eq!(result.len(), 18);
+    }
+
+    #[test]
+    fn test_null_terminated_bytes_unicode() {
+        let result = null_terminated_bytes("hello 世界").unwrap();
+        assert!(result.ends_with(&[0]));
+        assert_eq!(&result[..result.len() - 1], "hello 世界".as_bytes());
+    }
+
+    #[test]
+    fn test_null_terminated_bytes_special_chars() {
+        let result = null_terminated_bytes("test\ndata\ttab").unwrap();
+        assert_eq!(result, b"test\ndata\ttab\0");
+    }
+
+    #[test]
+    fn test_discover_addresses_returns_vec() {
+        // Basic test that discover_addresses returns a Vec
+        let _addresses = discover_addresses();
+        // Test passes if no panic occurs
+    }
+
+    #[test]
+    fn test_discover_first_sender_returns_option() {
+        // Basic test that discover_first_sender returns an Option
+        let _sender = discover_first_sender();
+        // Result may be None in test environment, just verify it compiles and runs
+    }
+
+    #[test]
+    fn test_discover_matching_sender_no_filters() {
+        // Test with no filters (should return first available if any)
+        let _result = discover_matching_sender(None, None);
+        // Result may be None in test environment
+        // Test passes if no panic occurs
+    }
+
+    #[test]
+    fn test_discover_matching_sender_with_sender_filter() {
+        // Test with sender filter (may return None in test environment)
+        let _result = discover_matching_sender(Some("test"), None);
+    }
+
+    #[test]
+    fn test_discover_matching_sender_with_stream_filter() {
+        // Test with stream filter (may return None in test environment)
+        let _result = discover_matching_sender(None, Some("stream"));
+    }
+
+    #[test]
+    fn test_discover_matching_sender_with_both_filters() {
+        // Test with both filters (may return None in test environment)
+        let _result = discover_matching_sender(Some("test"), Some("stream"));
+    }
+}

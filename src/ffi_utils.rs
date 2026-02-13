@@ -5,7 +5,9 @@ use std::os::raw::c_char;
 
 /// Converts a fixed-size C char array to a Rust `String`.
 pub(crate) fn c_char_array_to_string(arr: &[c_char]) -> String {
-    // SAFETY: c_char is a byte-sized type; we only read the provided slice length.
+    // SAFETY: We cast a pointer to a c_char slice to a u8 slice with the same length.
+    // c_char is guaranteed to be a single-byte type (i8 or u8), so this cast is safe.
+    // The resulting slice has the same lifetime and length as the input slice.
     let bytes = unsafe { std::slice::from_raw_parts(arr.as_ptr() as *const u8, arr.len()) };
     match CStr::from_bytes_until_nul(bytes) {
         Ok(cstr) => cstr.to_string_lossy().into_owned(),

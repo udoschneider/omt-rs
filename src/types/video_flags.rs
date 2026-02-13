@@ -43,3 +43,172 @@ impl From<VideoFlags> for i32 {
         value.bits()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_from_ffi_none() {
+        let flags = VideoFlags::from(0);
+        assert_eq!(flags, VideoFlags::NONE);
+    }
+
+    #[test]
+    fn test_from_ffi_interlaced() {
+        let flags = VideoFlags::from(1);
+        assert_eq!(flags, VideoFlags::INTERLACED);
+    }
+
+    #[test]
+    fn test_from_ffi_alpha() {
+        let flags = VideoFlags::from(2);
+        assert_eq!(flags, VideoFlags::ALPHA);
+    }
+
+    #[test]
+    fn test_from_ffi_premultiplied() {
+        let flags = VideoFlags::from(4);
+        assert_eq!(flags, VideoFlags::PREMULTIPLIED);
+    }
+
+    #[test]
+    fn test_from_ffi_preview() {
+        let flags = VideoFlags::from(8);
+        assert_eq!(flags, VideoFlags::PREVIEW);
+    }
+
+    #[test]
+    fn test_from_ffi_high_bit_depth() {
+        let flags = VideoFlags::from(16);
+        assert_eq!(flags, VideoFlags::HIGH_BIT_DEPTH);
+    }
+
+    #[test]
+    fn test_to_i32_none() {
+        let flags = VideoFlags::NONE;
+        let val: i32 = flags.into();
+        assert_eq!(val, 0);
+    }
+
+    #[test]
+    fn test_to_i32_interlaced() {
+        let flags = VideoFlags::INTERLACED;
+        let val: i32 = flags.into();
+        assert_eq!(val, 1);
+    }
+
+    #[test]
+    fn test_to_i32_alpha() {
+        let flags = VideoFlags::ALPHA;
+        let val: i32 = flags.into();
+        assert_eq!(val, 2);
+    }
+
+    #[test]
+    fn test_to_i32_premultiplied() {
+        let flags = VideoFlags::PREMULTIPLIED;
+        let val: i32 = flags.into();
+        assert_eq!(val, 4);
+    }
+
+    #[test]
+    fn test_to_i32_preview() {
+        let flags = VideoFlags::PREVIEW;
+        let val: i32 = flags.into();
+        assert_eq!(val, 8);
+    }
+
+    #[test]
+    fn test_to_i32_high_bit_depth() {
+        let flags = VideoFlags::HIGH_BIT_DEPTH;
+        let val: i32 = flags.into();
+        assert_eq!(val, 16);
+    }
+
+    #[test]
+    fn test_bitflag_union() {
+        let flags = VideoFlags::ALPHA | VideoFlags::PREMULTIPLIED;
+        assert!(flags.contains(VideoFlags::ALPHA));
+        assert!(flags.contains(VideoFlags::PREMULTIPLIED));
+        assert!(!flags.contains(VideoFlags::INTERLACED));
+    }
+
+    #[test]
+    fn test_bitflag_intersection() {
+        let flags1 = VideoFlags::ALPHA | VideoFlags::INTERLACED;
+        let flags2 = VideoFlags::ALPHA | VideoFlags::PREVIEW;
+        let intersection = flags1 & flags2;
+        assert_eq!(intersection, VideoFlags::ALPHA);
+    }
+
+    #[test]
+    fn test_bitflag_contains() {
+        let flags = VideoFlags::ALPHA | VideoFlags::HIGH_BIT_DEPTH;
+        assert!(flags.contains(VideoFlags::ALPHA));
+        assert!(flags.contains(VideoFlags::HIGH_BIT_DEPTH));
+        assert!(!flags.contains(VideoFlags::PREVIEW));
+        assert!(!flags.contains(VideoFlags::INTERLACED));
+    }
+
+    #[test]
+    fn test_bitflag_is_empty() {
+        assert!(VideoFlags::NONE.is_empty());
+        assert!(!VideoFlags::ALPHA.is_empty());
+    }
+
+    #[test]
+    fn test_bitflag_all() {
+        let all = VideoFlags::all();
+        assert!(all.contains(VideoFlags::INTERLACED));
+        assert!(all.contains(VideoFlags::ALPHA));
+        assert!(all.contains(VideoFlags::PREMULTIPLIED));
+        assert!(all.contains(VideoFlags::PREVIEW));
+        assert!(all.contains(VideoFlags::HIGH_BIT_DEPTH));
+    }
+
+    #[test]
+    fn test_clone() {
+        let flags1 = VideoFlags::ALPHA;
+        let flags2 = flags1.clone();
+        assert_eq!(flags1, flags2);
+    }
+
+    #[test]
+    fn test_copy() {
+        let flags1 = VideoFlags::INTERLACED;
+        let flags2 = flags1;
+        assert_eq!(flags1, VideoFlags::INTERLACED);
+        assert_eq!(flags2, VideoFlags::INTERLACED);
+    }
+
+    #[test]
+    fn test_eq() {
+        assert_eq!(VideoFlags::NONE, VideoFlags::NONE);
+        assert_eq!(VideoFlags::ALPHA, VideoFlags::ALPHA);
+        assert_ne!(VideoFlags::ALPHA, VideoFlags::PREVIEW);
+    }
+
+    #[test]
+    fn test_debug() {
+        let flags = VideoFlags::ALPHA | VideoFlags::PREMULTIPLIED;
+        let debug_str = format!("{:?}", flags);
+        assert!(debug_str.contains("ALPHA"));
+        assert!(debug_str.contains("PREMULTIPLIED"));
+    }
+
+    #[test]
+    fn test_from_bits_truncate() {
+        // Test with unknown bits set (should be truncated)
+        let flags = VideoFlags::from_bits_truncate(0xFF);
+        let val: i32 = flags.into();
+        assert_eq!(val, 0x1F); // Only known bits (1 | 2 | 4 | 8 | 16)
+    }
+
+    #[test]
+    fn test_combined_flags() {
+        let flags = VideoFlags::ALPHA | VideoFlags::PREMULTIPLIED | VideoFlags::HIGH_BIT_DEPTH;
+        let val: i32 = flags.into();
+        assert_eq!(val, 22); // 2 | 4 | 16
+    }
+}
