@@ -210,17 +210,101 @@ Settings::set_logging_filename(None);
 
 See the [`examples/`](examples/) directory for complete working examples:
 
-- **`discovery.rs`**: Network discovery of OMT sources
-- **`receiver.rs`**: Receiving and displaying frame information
-- **`sender.rs`**: Creating a sender and monitoring connections
+### Basic Examples
 
-Run an example:
+#### `discovery` - Network Discovery
+Continuously scans the network for available OMT sources and displays their addresses.
 
 ```bash
 cargo run --example discovery
-cargo run --example receiver
+```
+
+**Features:**
+- Automatic network scanning using mDNS
+- Continuous refresh every 5 seconds
+- Displays source count and addresses
+
+#### `sender` - Creating a Sender
+Creates an OMT sender that broadcasts on the network and monitors for connections.
+
+```bash
 cargo run --example sender
 ```
+
+**Features:**
+- Creates a high-quality OMT sender
+- Sets sender information metadata
+- Monitors active connections
+- Polls for tally state changes
+
+**Note:** This example creates a sender but does not send frames. See `send_frames` for complete transmission.
+
+#### `receiver` - Receiving Frames
+Discovers sources and receives both video and audio frames for 10 seconds.
+
+```bash
+cargo run --example receiver
+```
+
+**Features:**
+- Automatic network discovery
+- Receives video and audio simultaneously
+- Displays frame information (dimensions, codec, sample rate)
+- Shows transmission statistics
+
+### Advanced Examples
+
+#### `send_frames` - Complete Frame Transmission
+Loads a JPEG image and sends it as a video stream at 30fps with a 1kHz sine wave audio signal.
+
+```bash
+cargo run --example send_frames
+```
+
+**Features:**
+- Loads `testcard.jpg` and converts to BGRA format
+- Generates continuous 1kHz sine wave audio (48kHz)
+- Sends metadata frames with stream information
+- Displays connection count and statistics
+
+**Requirements:** Image file `testcard.jpg` in the examples directory
+
+#### `view_stream` - Terminal Video Viewer
+Displays an OMT video stream directly in the terminal with true color support.
+
+```bash
+# Auto-discover first source
+cargo run --example view_stream
+
+# Or specify address
+cargo run --example view_stream -- "omt://hostname:6400"
+```
+
+**Features:**
+- Receives UYVY video and converts to RGB
+- Renders frames in terminal with true color
+- Throttles display to ~1 fps for readability
+
+**Requirements:** Terminal with true color support (24-bit color)
+
+#### `rebroadcast_bw` - Video Processing Pipeline
+Receives an OMT stream, converts it to grayscale, and rebroadcasts as a new stream.
+
+```bash
+# Auto-discover first source
+cargo run --example rebroadcast_bw
+
+# Or specify address
+cargo run --example rebroadcast_bw -- "omt://hostname:6400"
+```
+
+**Features:**
+- Receives UYVY video frames
+- Converts to grayscale by neutralizing chrominance
+- Rebroadcasts as new stream with " (BW)" suffix
+- Preserves frame rate, aspect ratio, and timing
+
+**How it works:** Sets U and V components to 128 (neutral) while preserving Y (luma) values.
 
 ## Architecture
 

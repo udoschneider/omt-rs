@@ -1,4 +1,37 @@
-//! Example that views an OMT video stream in the terminal
+//! Example demonstrating how to view an OMT video stream in the terminal.
+//!
+//! This example connects to an OMT video source and displays the video frames
+//! directly in the terminal using the `viuer` crate. It automatically discovers
+//! sources or accepts a manual address and renders approximately 1 frame per second.
+//!
+//! # Usage
+//!
+//! Run the example from the workspace root:
+//!
+//! ```sh
+//! # Automatically discover and connect to the first available source
+//! cargo run --example view_stream
+//!
+//! # Or specify a source address explicitly
+//! cargo run --example view_stream -- "omt://hostname:6400"
+//! ```
+//!
+//! # Features
+//!
+//! - Automatic discovery of OMT sources or manual address specification
+//! - Receives UYVY video frames and converts them to RGB
+//! - Renders video frames directly in the terminal with true color support
+//! - Throttles display to approximately 1 frame per second for readability
+//!
+//! # Requirements
+//!
+//! This example requires a terminal that supports true color (24-bit color).
+//! Most modern terminal emulators support this feature.
+//!
+//! # Note
+//!
+//! The frame rate is intentionally limited to 1 fps to make the terminal output
+//! readable. The actual OMT stream may be running at a much higher frame rate.
 
 use clap::Parser;
 use omt::{Discovery, FrameType, PreferredVideoFormat, ReceiveFlags, Receiver};
@@ -89,6 +122,16 @@ fn frame_to_image(frame: &omt::MediaFrame) -> Option<image::DynamicImage> {
 }
 
 fn discover_first_sender() -> Option<String> {
+    println!("Discovering OMT sources...");
+    let addresses = Discovery::get_addresses();
+
+    if !addresses.is_empty() {
+        return addresses.into_iter().next();
+    }
+
+    println!("No sources found on first attempt, retrying in 2 seconds...");
+    std::thread::sleep(Duration::from_secs(2));
+
     let addresses = Discovery::get_addresses();
     addresses.into_iter().next()
 }

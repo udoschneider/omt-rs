@@ -1,11 +1,38 @@
-//! Example OMT receiver that connects to a source and receives frames.
+//! Example demonstrating how to receive video and audio frames from an OMT source.
+//!
+//! This example discovers available OMT sources on the network, connects to the first
+//! available source (or a default address if none found), and receives both video and
+//! audio frames for 10 seconds while displaying frame information and statistics.
+//!
+//! # Usage
+//!
+//! Run the example from the workspace root:
+//!
+//! ```sh
+//! cargo run --example receiver
+//! ```
+//!
+//! The receiver will automatically discover sources or connect to `omt://localhost:6400`.
+//!
+//! # Features
+//!
+//! - Automatic network discovery of OMT sources
+//! - Receives both video and audio frames simultaneously
+//! - Displays frame information (dimensions, frame rate, codec, sample rate, etc.)
+//! - Shows transmission statistics after receiving
 
 use omt::{Discovery, FrameType, PreferredVideoFormat, ReceiveFlags, Receiver};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Discover available sources
     println!("Discovering OMT sources...");
-    let sources = Discovery::get_addresses();
+    let mut sources = Discovery::get_addresses();
+
+    if sources.is_empty() {
+        println!("No sources found on first attempt, retrying in 2 seconds...");
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        sources = Discovery::get_addresses();
+    }
 
     if sources.is_empty() {
         println!("No sources found. Using default address.");

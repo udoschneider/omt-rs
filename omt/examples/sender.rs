@@ -1,4 +1,33 @@
-//! Example OMT sender that broadcasts a test pattern.
+//! Example demonstrating how to create an OMT sender and monitor connections.
+//!
+//! This example creates an OMT sender that broadcasts on the network, sets sender
+//! information metadata, and monitors for incoming connections. It also demonstrates
+//! tally state monitoring and connection metadata.
+//!
+//! # Usage
+//!
+//! Run the example from the workspace root:
+//!
+//! ```sh
+//! cargo run --example sender
+//! ```
+//!
+//! The sender will display its address (e.g., `omt://hostname:port`) which can be used
+//! by OMT receivers to connect. You can use the `receiver` or `view_stream` examples
+//! to connect to this sender.
+//!
+//! # Features
+//!
+//! - Creates a high-quality OMT sender
+//! - Sets sender information (name, manufacturer, version)
+//! - Adds connection metadata for clients
+//! - Monitors active connection count
+//! - Polls for tally state changes
+//!
+//! # Note
+//!
+//! This example creates a sender but does not send actual video/audio frames.
+//! See the `send_frames` example for a complete demonstration of frame transmission.
 
 use omt::{Quality, Sender, SenderInfo};
 

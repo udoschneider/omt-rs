@@ -1,3 +1,38 @@
+//! Example demonstrating how to receive, process, and rebroadcast an OMT video stream.
+//!
+//! This example connects to an OMT video source, converts each frame to grayscale
+//! (black and white), and rebroadcasts it as a new OMT stream. It demonstrates
+//! real-time video processing and the use of both receiver and sender simultaneously.
+//!
+//! # Usage
+//!
+//! Run the example from the workspace root:
+//!
+//! ```sh
+//! # Automatically discover and connect to the first available source
+//! cargo run --example rebroadcast_bw
+//!
+//! # Or specify a source address explicitly
+//! cargo run --example rebroadcast_bw -- "omt://hostname:6400"
+//! ```
+//!
+//! The rebroadcast stream will be available with " (BW)" appended to the original
+//! stream name, or as "OMT Stream (BW)" if the name cannot be determined.
+//!
+//! # Features
+//!
+//! - Automatic discovery of sources or manual address specification
+//! - Receives UYVY video frames from source
+//! - Converts frames to grayscale by neutralizing chrominance (U and V components)
+//! - Rebroadcasts processed frames as a new OMT stream
+//! - Preserves original frame rate, aspect ratio, and timing
+//!
+//! # How It Works
+//!
+//! The grayscale conversion works by setting the U and V (chrominance) components
+//! of UYVY frames to 128 (neutral), while preserving the Y (luma) values. This
+//! removes all color information while maintaining brightness levels.
+
 use clap::Parser;
 use omt::{
     Codec, ColorSpace, Discovery, FrameType, PreferredVideoFormat, Quality, ReceiveFlags, Receiver,
@@ -119,6 +154,16 @@ fn main() {
 }
 
 fn discover_first_sender() -> Option<String> {
+    println!("Discovering OMT sources...");
+    let addresses = Discovery::get_addresses();
+
+    if !addresses.is_empty() {
+        return addresses.into_iter().next();
+    }
+
+    println!("No sources found on first attempt, retrying in 2 seconds...");
+    std::thread::sleep(Duration::from_secs(2));
+
     let addresses = Discovery::get_addresses();
     addresses.into_iter().next()
 }
