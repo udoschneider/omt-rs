@@ -190,8 +190,16 @@ mod tests {
 
     #[test]
     fn test_settings_integer() {
-        // Test getting default port
-        let port = Settings::network_port_start();
-        assert!(port > 0);
+        // Test setting and getting an integer value
+        let test_port = 7500;
+        Settings::set_network_port_start(test_port);
+        let retrieved_port = Settings::network_port_start();
+        assert_eq!(retrieved_port, test_port);
+
+        // Test setting and getting another value
+        let test_end_port = 7600;
+        Settings::set_network_port_end(test_end_port);
+        let retrieved_end_port = Settings::network_port_end();
+        assert_eq!(retrieved_end_port, test_end_port);
     }
 }

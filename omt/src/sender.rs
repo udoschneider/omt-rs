@@ -52,8 +52,6 @@ impl Sender {
     /// ```no_run
     /// # use omt::{Sender, Quality, SenderInfo};
     /// # let sender = Sender::new("My Camera", Quality::High)?;
-    /// use omt::SenderInfo;
-    ///
     /// let info = SenderInfo::new(
     ///     "My Product".to_string(),
     ///     "ACME Corp".to_string(),

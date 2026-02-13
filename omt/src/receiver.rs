@@ -80,8 +80,6 @@ impl Receiver {
     /// ```no_run
     /// # use omt::{Receiver, FrameType, PreferredVideoFormat, ReceiveFlags};
     /// # let receiver = Receiver::new("omt://localhost:6400", FrameType::VIDEO, PreferredVideoFormat::Uyvy, ReceiveFlags::NONE)?;
-    /// use omt::FrameType;
-    ///
     /// // Receive any video frame, wait up to 1 second
     /// if let Some(frame) = receiver.receive(FrameType::VIDEO, 1000)? {
     ///     println!("Received frame");
@@ -115,8 +113,7 @@ impl Receiver {
     /// ```no_run
     /// # use omt::{Receiver, FrameType, PreferredVideoFormat, ReceiveFlags, Tally};
     /// # let receiver = Receiver::new("omt://localhost:6400", FrameType::VIDEO, PreferredVideoFormat::Uyvy, ReceiveFlags::NONE)?;
-    /// use omt::Tally;
-    ///
+    /// let tally = Tally::new(true, false);
     /// receiver.set_tally(Tally::program_only());
     /// # Ok::<(), omt::Error>(())
     /// ```
