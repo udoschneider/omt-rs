@@ -3,7 +3,7 @@
 use crate::error::{Error, Result};
 use crate::frame::MediaFrame;
 
-impl MediaFrame {
+impl<'a> MediaFrame<'a> {
     /// Returns the metadata as a UTF-8 string.
     ///
     /// This method is only meaningful for metadata frames.

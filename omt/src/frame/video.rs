@@ -9,7 +9,7 @@ use crate::video_conversion::{
 };
 use rgb::{RGB8, RGB16, RGBA8, RGBA16};
 
-impl MediaFrame {
+impl<'a> MediaFrame<'a> {
     /// Returns the video width in pixels.
     ///
     /// This method is only meaningful for video frames.

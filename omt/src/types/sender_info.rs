@@ -53,9 +53,16 @@ impl SenderInfo {
     }
 
     fn c_array_to_string(arr: &[i8; MAX_STRING_LENGTH]) -> Result<String> {
+        // SAFETY: Reinterpreting i8 array as u8 array for UTF-8 validation.
+        // This is safe because i8 and u8 have the same size and alignment.
         let bytes: &[u8] =
             unsafe { std::slice::from_raw_parts(arr.as_ptr() as *const u8, arr.len()) };
+
+        // Find the null terminator. The C API should always null-terminate strings,
+        // but we defensively use the full buffer length if no null is found.
         let null_pos = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+
+        // Validate UTF-8 only up to the null terminator (or end of valid data)
         std::str::from_utf8(&bytes[..null_pos])
             .map(|s| s.to_string())
             .map_err(|_| Error::InvalidUtf8)
@@ -63,6 +70,8 @@ impl SenderInfo {
 
     fn string_to_c_array(s: &str, arr: &mut [i8; MAX_STRING_LENGTH]) -> Result<()> {
         let bytes = s.as_bytes();
+
+        // We need space for the string plus a null terminator
         if bytes.len() >= MAX_STRING_LENGTH {
             return Err(Error::BufferTooSmall {
                 required: bytes.len() + 1,
@@ -70,10 +79,19 @@ impl SenderInfo {
             });
         }
 
+        // Copy string bytes into the array
         for (i, &byte) in bytes.iter().enumerate() {
             arr[i] = byte as i8;
         }
+
+        // Null-terminate the string
         arr[bytes.len()] = 0;
+
+        // Zero out the rest of the buffer for consistency and security
+        // (prevents leaking old data)
+        for i in (bytes.len() + 1)..MAX_STRING_LENGTH {
+            arr[i] = 0;
+        }
 
         Ok(())
     }

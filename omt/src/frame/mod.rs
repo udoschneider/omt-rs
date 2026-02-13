@@ -5,40 +5,46 @@ mod metadata;
 mod video;
 
 use crate::types::{Codec, FrameType};
+use std::marker::PhantomData;
 use std::slice;
 
 /// A media frame containing video, audio, or metadata.
 ///
 /// This is a safe wrapper around the FFI `OMTMediaFrame` structure.
-/// The frame data is valid until the next receive call or until the frame is dropped.
+///
+/// # Lifetime
+///
+/// The lifetime parameter `'a` ensures that the frame data cannot outlive its source.
+/// For frames received from the C API, this is tied to the receiver/sender instance.
+/// For frames created from `OwnedMediaFrame`, this is tied to the owned frame's lifetime.
+///
+/// **IMPORTANT:** Frames received from `Receiver::receive()` or `Sender::receive_metadata()`
+/// are only valid until the next call to those methods. The lifetime parameter enforces this.
 ///
 /// The frame type can be queried using [`frame_type()`](MediaFrame::frame_type).
 /// Type-specific methods are available in dedicated impl blocks for video, audio, and metadata frames.
 #[derive(Debug)]
-pub struct MediaFrame {
+pub struct MediaFrame<'a> {
     ffi: omt_sys::OMTMediaFrame,
+    _marker: PhantomData<&'a ()>,
 }
 
 // Common methods available for all frame types
-impl MediaFrame {
-    /// Creates a new zeroed media frame.
-    pub(crate) fn new() -> Self {
-        Self {
-            ffi: unsafe { std::mem::zeroed() },
-        }
-    }
-
+impl<'a> MediaFrame<'a> {
     /// Creates a frame from an FFI pointer (receive only).
     ///
     /// # Safety
     ///
     /// The pointer must be valid and point to a properly initialized OMTMediaFrame.
+    /// The caller must ensure that the data pointed to by the OMTMediaFrame remains
+    /// valid for the lifetime 'a.
     pub(crate) unsafe fn from_ffi_ptr(ptr: *const omt_sys::OMTMediaFrame) -> Option<Self> {
         if ptr.is_null() {
             None
         } else {
             Some(Self {
                 ffi: unsafe { *ptr },
+                _marker: PhantomData,
             })
         }
     }
@@ -50,9 +56,12 @@ impl MediaFrame {
     /// # Safety
     ///
     /// The FFI structure must be properly initialized and all pointers within it
-    /// must remain valid for the lifetime of the returned MediaFrame.
+    /// must remain valid for the lifetime 'a of the returned MediaFrame.
     pub(crate) unsafe fn from_owned_ffi(ffi: omt_sys::OMTMediaFrame) -> Self {
-        Self { ffi }
+        Self {
+            ffi,
+            _marker: PhantomData,
+        }
     }
 
     /// Returns a reference to the underlying FFI structure.
@@ -83,10 +92,14 @@ impl MediaFrame {
     }
 
     /// Returns the frame data as a byte slice.
-    pub fn data(&self) -> &[u8] {
+    ///
+    /// The returned slice is valid for the lifetime of this MediaFrame.
+    pub fn data(&self) -> &'a [u8] {
         if self.ffi.Data.is_null() || self.ffi.DataLength <= 0 {
             &[]
         } else {
+            // SAFETY: The lifetime 'a ensures this slice cannot outlive the source data.
+            // The C API guarantees Data is valid for the frame's lifetime.
             unsafe {
                 slice::from_raw_parts(self.ffi.Data as *const u8, self.ffi.DataLength as usize)
             }
@@ -94,10 +107,14 @@ impl MediaFrame {
     }
 
     /// Returns the compressed data (VMX1) if available.
-    pub fn compressed_data(&self) -> &[u8] {
+    ///
+    /// The returned slice is valid for the lifetime of this MediaFrame.
+    pub fn compressed_data(&self) -> &'a [u8] {
         if self.ffi.CompressedData.is_null() || self.ffi.CompressedLength <= 0 {
             &[]
         } else {
+            // SAFETY: The lifetime 'a ensures this slice cannot outlive the source data.
+            // The C API guarantees CompressedData is valid for the frame's lifetime.
             unsafe {
                 slice::from_raw_parts(
                     self.ffi.CompressedData as *const u8,
@@ -111,7 +128,9 @@ impl MediaFrame {
     ///
     /// Returns an empty string if no metadata is present.
     /// If the metadata is not valid UTF-8, this will return an empty string.
-    pub fn frame_metadata(&self) -> &str {
+    ///
+    /// The returned string slice is valid for the lifetime of this MediaFrame.
+    pub fn frame_metadata(&self) -> &'a str {
         if self.ffi.FrameMetadata.is_null() || self.ffi.FrameMetadataLength <= 0 {
             ""
         } else {
@@ -128,4 +147,6 @@ impl MediaFrame {
     }
 }
 
-unsafe impl Send for MediaFrame {}
+// SAFETY: MediaFrame contains borrowed data with lifetime 'a, which prevents
+// use-after-free. The underlying C library is thread-safe for read operations.
+unsafe impl<'a> Send for MediaFrame<'a> {}

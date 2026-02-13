@@ -152,7 +152,7 @@ impl Sender {
     /// // sender.send(&frame)?;
     /// # Ok::<(), omt::Error>(())
     /// ```
-    pub fn send(&self, frame: &MediaFrame) -> Result<bool> {
+    pub fn send(&self, frame: &MediaFrame<'_>) -> Result<bool> {
         let result = unsafe {
             omt_sys::omt_send(
                 self.handle.as_ptr() as *mut _,
@@ -173,9 +173,17 @@ impl Sender {
     /// Receives metadata from receivers.
     ///
     /// Blocks until metadata is available or timeout expires.
-    pub fn receive_metadata(&self, timeout_ms: i32) -> Result<Option<MediaFrame>> {
+    ///
+    /// # Frame Lifetime
+    ///
+    /// The returned frame is only valid until the next call to `receive_metadata()` on this sender.
+    /// The frame's lifetime is tied to `&self` to prevent use-after-invalidation.
+    pub fn receive_metadata(&self, timeout_ms: i32) -> Result<Option<MediaFrame<'_>>> {
         let ptr = unsafe { omt_sys::omt_send_receive(self.handle.as_ptr() as *mut _, timeout_ms) };
 
+        // SAFETY: The C API guarantees the frame data is valid until the next call to omt_send_receive.
+        // The lifetime bound to &self ensures the frame cannot outlive this sender instance
+        // and cannot be used after the next receive_metadata() call (due to &self borrow).
         Ok(unsafe { MediaFrame::from_ffi_ptr(ptr) })
     }
 

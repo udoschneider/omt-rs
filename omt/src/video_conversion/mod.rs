@@ -42,7 +42,7 @@ mod test_utils;
 /// Returns the YUV standard matrix based on the frame's color space:
 /// - `Bt709` for BT.709 color space or frames with width >= 1280 (HD and above)
 /// - `Bt601` for BT.601 color space or frames with width < 1280 (SD)
-pub(crate) fn get_yuv_matrix(frame: &MediaFrame) -> YuvStandardMatrix {
+pub(crate) fn get_yuv_matrix(frame: &MediaFrame<'_>) -> YuvStandardMatrix {
     match frame.color_space() {
         Some(ColorSpace::Bt709) => YuvStandardMatrix::Bt709,
         Some(ColorSpace::Bt601) => YuvStandardMatrix::Bt601,
@@ -60,7 +60,7 @@ pub(crate) fn get_yuv_matrix(frame: &MediaFrame) -> YuvStandardMatrix {
 ///
 /// Returns `Full` range if the frame has high bit depth flag set,
 /// otherwise returns `Limited` range.
-pub(crate) fn get_yuv_range(frame: &MediaFrame) -> YuvRange {
+pub(crate) fn get_yuv_range(frame: &MediaFrame<'_>) -> YuvRange {
     if frame.flags().contains(VideoFlags::HIGH_BIT_DEPTH) {
         YuvRange::Full
     } else {

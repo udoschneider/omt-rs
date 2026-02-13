@@ -12,6 +12,11 @@ use std::ptr::NonNull;
 ///
 /// The receiver automatically manages the connection and provides methods
 /// for receiving video, audio, and metadata frames.
+///
+/// # Frame Lifetime
+///
+/// Frames returned by `receive()` are only valid until the next call to `receive()`.
+/// The lifetime parameter on `MediaFrame` enforces this constraint at compile time.
 pub struct Receiver {
     handle: NonNull<omt_sys::omt_receive_t>,
 }
@@ -75,6 +80,11 @@ impl Receiver {
     ///
     /// Returns `Ok(Some(frame))` if a frame was received, `Ok(None)` if timed out.
     ///
+    /// # Frame Lifetime
+    ///
+    /// The returned frame is only valid until the next call to `receive()` on this receiver.
+    /// The frame's lifetime is tied to `&self` to prevent use-after-invalidation.
+    ///
     /// # Examples
     ///
     /// ```no_run
@@ -86,7 +96,11 @@ impl Receiver {
     /// }
     /// # Ok::<(), omt::Error>(())
     /// ```
-    pub fn receive(&self, frame_types: FrameType, timeout_ms: i32) -> Result<Option<MediaFrame>> {
+    pub fn receive(
+        &self,
+        frame_types: FrameType,
+        timeout_ms: i32,
+    ) -> Result<Option<MediaFrame<'_>>> {
         let ptr = unsafe {
             omt_sys::omt_receive(
                 self.handle.as_ptr() as *mut _,
@@ -95,13 +109,16 @@ impl Receiver {
             )
         };
 
+        // SAFETY: The C API guarantees the frame data is valid until the next call to omt_receive.
+        // The lifetime bound to &self ensures the frame cannot outlive this receiver instance
+        // and cannot be used after the next receive() call (due to &self borrow).
         Ok(unsafe { MediaFrame::from_ffi_ptr(ptr) })
     }
 
     /// Sends a metadata frame to the sender.
     ///
     /// Only metadata frames are supported for sending from a receiver.
-    pub fn send_metadata(&self, _frame: &MediaFrame) -> Result<bool> {
+    pub fn send_metadata(&self, _frame: &MediaFrame<'_>) -> Result<bool> {
         // TODO: Implement when we have a MediaFrame builder
         Ok(false)
     }

@@ -507,7 +507,10 @@ impl OwnedMediaFrame {
     ///
     /// The returned frame borrows data from this owned frame, so the owned
     /// frame must remain valid while the borrowed frame is in use.
-    pub fn as_media_frame(&self) -> MediaFrame {
+    ///
+    /// The lifetime of the returned `MediaFrame` is tied to `&self`, ensuring
+    /// it cannot outlive this `OwnedMediaFrame`.
+    pub fn as_media_frame(&self) -> MediaFrame<'_> {
         let mut ffi = omt_sys::OMTMediaFrame {
             Type: self.frame_type.to_ffi(),
             Timestamp: self.timestamp,
@@ -536,8 +539,9 @@ impl OwnedMediaFrame {
             ffi.FrameMetadataLength = metadata.as_bytes_with_nul().len() as i32;
         }
 
-        // SAFETY: We're creating a MediaFrame from a valid FFI structure
-        // The data is borrowed from self, which must outlive the MediaFrame
+        // SAFETY: We're creating a MediaFrame from a valid FFI structure.
+        // The data is borrowed from self with lifetime 'a tied to &self,
+        // ensuring the MediaFrame cannot outlive this OwnedMediaFrame.
         unsafe { MediaFrame::from_owned_ffi(ffi) }
     }
 
