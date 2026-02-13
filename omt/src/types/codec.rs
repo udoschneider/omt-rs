@@ -1,8 +1,54 @@
 //! Codec type definitions and utilities.
 
-pub use crate::types::Codec;
+/// Media codec types supported by OMT.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u32)]
+pub enum Codec {
+    /// VMX1 - Fast video codec.
+    Vmx1 = omt_sys::OMTCodec_VMX1,
+    /// FPA1 - Floating-point Planar Audio 32bit.
+    Fpa1 = omt_sys::OMTCodec_FPA1,
+    /// UYVY - 16bpp YUV format.
+    Uyvy = omt_sys::OMTCodec_UYVY,
+    /// YUY2 - 16bpp YUV format YUYV pixel order.
+    Yuy2 = omt_sys::OMTCodec_YUY2,
+    /// BGRA - 32bpp RGBA format (Same as ARGB32 on Win32).
+    Bgra = omt_sys::OMTCodec_BGRA,
+    /// NV12 - Planar 4:2:0 YUV format. Y plane followed by interleaved half height U/V plane.
+    Nv12 = omt_sys::OMTCodec_NV12,
+    /// YV12 - Planar 4:2:0 YUV format. Y plane followed by half height U and V planes.
+    Yv12 = omt_sys::OMTCodec_YV12,
+    /// UYVA - 16pp YUV format immediately followed by an alpha plane.
+    Uyva = omt_sys::OMTCodec_UYVA,
+    /// P216 - Planar 4:2:2 YUV format. 16bit Y plane followed by interlaved 16bit UV plane.
+    P216 = omt_sys::OMTCodec_P216,
+    /// PA16 - Same as P216 followed by an additional 16bit alpha plane.
+    Pa16 = omt_sys::OMTCodec_PA16,
+}
 
 impl Codec {
+    /// Creates a `Codec` from raw FFI value.
+    pub(crate) fn from_ffi(value: u32) -> Option<Self> {
+        match value {
+            omt_sys::OMTCodec_VMX1 => Some(Self::Vmx1),
+            omt_sys::OMTCodec_FPA1 => Some(Self::Fpa1),
+            omt_sys::OMTCodec_UYVY => Some(Self::Uyvy),
+            omt_sys::OMTCodec_YUY2 => Some(Self::Yuy2),
+            omt_sys::OMTCodec_BGRA => Some(Self::Bgra),
+            omt_sys::OMTCodec_NV12 => Some(Self::Nv12),
+            omt_sys::OMTCodec_YV12 => Some(Self::Yv12),
+            omt_sys::OMTCodec_UYVA => Some(Self::Uyva),
+            omt_sys::OMTCodec_P216 => Some(Self::P216),
+            omt_sys::OMTCodec_PA16 => Some(Self::Pa16),
+            _ => None,
+        }
+    }
+
+    /// Converts to FFI value.
+    pub(crate) fn to_ffi(self) -> u32 {
+        self as u32
+    }
+
     /// Returns true if this is a video codec.
     pub fn is_video(&self) -> bool {
         !matches!(self, Codec::Fpa1)
