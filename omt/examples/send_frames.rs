@@ -1,5 +1,27 @@
 //! Example demonstrating how to create and send video, audio, and metadata frames.
+//!
+//! This example loads `testcard.jpg` from the examples directory and sends it as a video stream
+//! at 30fps, along with a 1kHz sine wave audio signal at 48kHz sample rate.
+//!
+//! # Usage
+//!
+//! Run the example from the workspace root:
+//!
+//! ```sh
+//! cargo run --example send_frames
+//! ```
+//!
+//! The sender will display its address (e.g., `omt://hostname:port`) which can be used
+//! by OMT receivers to connect and receive the stream.
+//!
+//! # Features
+//!
+//! - Loads JPEG image and converts to BGRA format using the `yuv` crate
+//! - Generates continuous 1kHz sine wave audio with proper phase continuity
+//! - Sends metadata frames every second with frame count and stream information
+//! - Displays connection count and transmission statistics
 
+use image::GenericImageView;
 use omt::{
     AudioFrameBuilder, Codec, MetadataFrameBuilder, Quality, Sender, SenderInfo, VideoFlags,
     VideoFrameBuilder,
@@ -23,8 +45,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Sender created at: {}", sender.get_address()?);
     println!("\nPress Ctrl+C to stop sending frames...\n");
 
+    // Load the testcard image once
+    let testcard_data = load_testcard_image()?;
+
     let mut frame_count = 0u64;
     let start_time = std::time::Instant::now();
+    let mut audio_sample_offset = 0usize;
 
     loop {
         // Calculate timestamp (10,000,000 units = 1 second)
@@ -33,11 +59,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Send a video frame every iteration
         if frame_count % 1 == 0 {
-            send_video_frame(&sender, timestamp, frame_count)?;
+            send_video_frame(&sender, timestamp, &testcard_data)?;
         }
 
         // Send an audio frame every iteration (with more samples than video frames)
-        send_audio_frame(&sender, timestamp)?;
+        audio_sample_offset = send_audio_frame(&sender, timestamp, audio_sample_offset)?;
 
         // Send metadata every 30 frames
         if frame_count % 30 == 0 {
@@ -72,29 +98,73 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-/// Creates and sends a test pattern video frame.
+/// Struct to hold testcard image data and metadata
+struct TestcardData {
+    width: i32,
+    height: i32,
+    bgra_data: Vec<u8>,
+}
+
+/// Loads testcard.jpg and converts it to BGRA format.
+fn load_testcard_image() -> Result<TestcardData, Box<dyn std::error::Error>> {
+    println!("Loading testcard.jpg...");
+
+    // Load the image
+    let img = image::open("omt/examples/testcard.jpg")?;
+    let (width, height) = img.dimensions();
+
+    println!("Loaded testcard: {}x{} pixels", width, height);
+
+    // Convert to RGBA8, then to BGRA format
+    let rgba_img = img.to_rgba8();
+    let bgra_data = rgba_to_bgra(&rgba_img, width as i32, height as i32);
+
+    Ok(TestcardData {
+        width: width as i32,
+        height: height as i32,
+        bgra_data,
+    })
+}
+
+/// Converts RGBA image data to BGRA format using the yuv crate.
+fn rgba_to_bgra(rgba_data: &image::RgbaImage, width: i32, height: i32) -> Vec<u8> {
+    let width = width as usize;
+    let height = height as usize;
+
+    // Allocate BGRA output buffer (4 bytes per pixel)
+    let mut bgra_data = vec![0u8; width * height * 4];
+    let stride = (width * 4) as u32;
+
+    // Shuffle RGBA to BGRA (just swap R and B channels)
+    yuv::rgba_to_bgra(
+        rgba_data.as_raw(),
+        stride,
+        &mut bgra_data,
+        stride,
+        width as u32,
+        height as u32,
+    )
+    .expect("RGBA to BGRA conversion failed");
+
+    bgra_data
+}
+
+/// Creates and sends a video frame with the testcard image.
 fn send_video_frame(
     sender: &Sender,
     timestamp: i64,
-    frame_count: u64,
+    testcard: &TestcardData,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let width = 1280;
-    let height = 720;
-
-    // Create a simple test pattern (UYVY format)
-    // UYVY is 2 bytes per pixel (16bpp)
-    let data = create_uyvy_test_pattern(width, height, frame_count);
-
     // Build the video frame
     let frame = VideoFrameBuilder::new()
-        .codec(Codec::Uyvy)
-        .dimensions(width, height)
-        .stride(width * 2)
+        .codec(Codec::Bgra)
+        .dimensions(testcard.width, testcard.height)
+        .stride(testcard.width * 4)
         .frame_rate(30, 1)
-        .aspect_ratio(16.0 / 9.0)
+        .aspect_ratio(testcard.width as f32 / testcard.height as f32)
         .flags(VideoFlags::NONE)
         .timestamp(timestamp)
-        .data(data)
+        .data(testcard.bgra_data.clone())
         .build()?;
 
     // Send the frame
@@ -104,21 +174,30 @@ fn send_video_frame(
     Ok(())
 }
 
-/// Creates and sends an audio frame with silence or test tone.
-fn send_audio_frame(sender: &Sender, timestamp: i64) -> Result<(), Box<dyn std::error::Error>> {
+/// Creates and sends an audio frame with a 1kHz sine wave.
+fn send_audio_frame(
+    sender: &Sender,
+    timestamp: i64,
+    sample_offset: usize,
+) -> Result<usize, Box<dyn std::error::Error>> {
     let sample_rate = 48000i32;
     let channels = 2i32;
     let samples_per_channel = 1600i32; // ~33ms at 48kHz
 
-    // Create planar audio data (silence for this example)
+    // Create planar audio data with 1kHz sine wave
     // In planar format: all samples for channel 0, then all for channel 1, etc.
     let mut audio_samples = vec![0.0f32; (samples_per_channel * channels) as usize];
 
-    // Optionally add a simple test tone (440 Hz sine wave)
-    let frequency = 440.0; // A4 note
+    // Generate 1kHz sine wave
+    let frequency = 1000.0; // 1kHz
+    let amplitude = 0.3; // 30% volume to avoid clipping
+
     for i in 0..samples_per_channel as usize {
-        let t = i as f32 / sample_rate as f32;
-        let sample = (2.0 * std::f32::consts::PI * frequency * t).sin() * 0.1;
+        let global_sample = sample_offset + i;
+        let t = global_sample as f32 / sample_rate as f32;
+        let sample = (2.0 * std::f32::consts::PI * frequency * t).sin() * amplitude;
+
+        // Write to both channels (left and right)
         audio_samples[i] = sample; // Left channel
         audio_samples[samples_per_channel as usize + i] = sample; // Right channel
     }
@@ -142,7 +221,8 @@ fn send_audio_frame(sender: &Sender, timestamp: i64) -> Result<(), Box<dyn std::
     let media_frame = frame.as_media_frame();
     sender.send(&media_frame)?;
 
-    Ok(())
+    // Return updated sample offset for continuous phase
+    Ok(sample_offset + samples_per_channel as usize)
 }
 
 /// Creates and sends a metadata frame.
@@ -158,6 +238,8 @@ fn send_metadata_frame(
     <frame_count>{}</frame_count>
     <timestamp>{}</timestamp>
     <source>OMT Rust Frame Builder Example</source>
+    <video>testcard.jpg</video>
+    <audio>1kHz sine wave</audio>
 </metadata>"#,
         frame_count, timestamp
     );
@@ -173,35 +255,4 @@ fn send_metadata_frame(
     sender.send(&media_frame)?;
 
     Ok(())
-}
-
-/// Creates a simple UYVY test pattern (color bars that animate).
-fn create_uyvy_test_pattern(width: i32, height: i32, frame_count: u64) -> Vec<u8> {
-    let stride = width * 2; // UYVY is 2 bytes per pixel
-    let mut data = vec![0u8; (stride * height) as usize];
-
-    // Animate the pattern based on frame count
-    let offset = (frame_count % 255) as u8;
-
-    for y in 0..height {
-        for x in 0..(width / 2) {
-            // UYVY packs 2 pixels into 4 bytes: U Y V Y
-            let pixel_index = (y * stride + x * 4) as usize;
-
-            // Create color bars that change over time
-            let bar = (x * 8 / width) as u8;
-            let u = bar.wrapping_mul(32).wrapping_add(offset);
-            let y_val = 128u8.wrapping_add((y as u8).wrapping_mul(bar).wrapping_div(4));
-            let v = (255 - bar.wrapping_mul(32)).wrapping_add(offset);
-
-            if pixel_index + 3 < data.len() {
-                data[pixel_index] = u; // U
-                data[pixel_index + 1] = y_val; // Y0
-                data[pixel_index + 2] = v; // V
-                data[pixel_index + 3] = y_val; // Y1
-            }
-        }
-    }
-
-    data
 }
