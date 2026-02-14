@@ -13,6 +13,16 @@ use std::ptr::NonNull;
 ///
 /// The sender manages network connections, encoding, and transmission
 /// of video, audio, and metadata to all connected receivers.
+///
+/// # Receiving Metadata
+///
+/// Similar to [`Receiver`](crate::Receiver), metadata frames are only valid until the next
+/// receive call. Two APIs are provided:
+///
+/// - [`receive_metadata`](Self::receive_metadata): Safe API requiring `&mut self`
+/// - [`receive_metadata_unchecked`](Self::receive_metadata_unchecked): Unsafe API using `&self`
+///
+/// For most use cases, prefer `receive_metadata` for compile-time safety.
 pub struct Sender {
     handle: NonNull<omt_sys::omt_send_t>,
 }
@@ -170,20 +180,118 @@ impl Sender {
         unsafe { omt_sys::omt_send_connections(self.handle.as_ptr() as *mut _) }
     }
 
-    /// Receives metadata from receivers.
+    /// Receives metadata from receivers - safe version.
+    ///
+    /// This is the recommended API that requires mutable access to the sender.
+    /// The borrow checker ensures you cannot hold multiple metadata frames simultaneously,
+    /// preventing use-after-invalidation bugs at compile time.
     ///
     /// Blocks until metadata is available or timeout expires.
     ///
+    /// # Arguments
+    ///
+    /// * `timeout_ms` - Maximum time to wait in milliseconds
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(Some(frame))` if metadata was received, `Ok(None)` if timed out.
+    ///
     /// # Frame Lifetime
     ///
-    /// The returned frame is only valid until the next call to `receive_metadata()` on this sender.
-    /// The frame's lifetime is tied to `&self` to prevent use-after-invalidation.
-    pub fn receive_metadata(&self, timeout_ms: i32) -> Result<Option<MediaFrame<'_>>> {
+    /// The returned frame is valid until the next call to any receive_metadata method.
+    /// The frame's lifetime is tied to `&mut self`, ensuring exclusive access.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use omt::{Sender, Quality};
+    /// # let mut sender = Sender::new("My Source", Quality::High)?;
+    /// loop {
+    ///     if let Some(metadata) = sender.receive_metadata(1000)? {
+    ///         println!("Received metadata");
+    ///         // Process metadata here
+    ///     } // metadata dropped before next receive
+    /// }
+    /// # Ok::<(), omt::Error>(())
+    /// ```
+    pub fn receive_metadata(&mut self, timeout_ms: i32) -> Result<Option<MediaFrame<'_>>> {
         let ptr = unsafe { omt_sys::omt_send_receive(self.handle.as_ptr() as *mut _, timeout_ms) };
 
         // SAFETY: The C API guarantees the frame data is valid until the next call to omt_send_receive.
-        // The lifetime bound to &self ensures the frame cannot outlive this sender instance
-        // and cannot be used after the next receive_metadata() call (due to &self borrow).
+        // The lifetime bound to &mut self ensures the frame cannot outlive this sender instance
+        // and prevents calling receive again while a frame exists (enforced by borrow checker).
+        Ok(unsafe { MediaFrame::from_ffi_ptr(ptr) })
+    }
+
+    /// Receives metadata from receivers - unsafe version.
+    ///
+    /// This is a performance-oriented API for advanced users who need concurrent access
+    /// to other sender methods while holding metadata frames. It uses `&self` instead of
+    /// `&mut self`, allowing more flexible usage patterns.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that no `MediaFrame` returned from a previous call to
+    /// `receive_metadata_unchecked` or `receive_metadata` on this sender is still alive
+    /// when calling this method. The underlying C library reuses the frame buffer, so holding
+    /// multiple frames leads to undefined behavior (data corruption, crashes, or worse).
+    ///
+    /// This is a fundamental limitation of the C library that cannot be expressed in
+    /// Rust's type system without using `&mut self`.
+    ///
+    /// # Arguments
+    ///
+    /// * `timeout_ms` - Maximum time to wait in milliseconds
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(Some(frame))` if metadata was received, `Ok(None)` if timed out.
+    ///
+    /// # Correct Usage Pattern
+    ///
+    /// ```no_run
+    /// # use omt::{Sender, Quality};
+    /// # let sender = Sender::new("My Source", Quality::High)?;
+    /// // CORRECT: Process and drop frame before next receive
+    /// loop {
+    ///     unsafe {
+    ///         if let Some(metadata) = sender.receive_metadata_unchecked(1000)? {
+    ///             process_metadata(&metadata);
+    ///         } // metadata dropped here
+    ///     }
+    /// }
+    /// # Ok::<(), omt::Error>(())
+    /// ```
+    ///
+    /// # Incorrect Usage (Undefined Behavior!)
+    ///
+    /// ```no_run
+    /// # use omt::{Sender, Quality};
+    /// # let sender = Sender::new("My Source", Quality::High)?;
+    /// // WRONG: Holding multiple frames
+    /// unsafe {
+    ///     let metadata1 = sender.receive_metadata_unchecked(1000)?;
+    ///     let metadata2 = sender.receive_metadata_unchecked(1000)?;
+    ///     // metadata1's data is now INVALID! Accessing it is undefined behavior!
+    /// }
+    /// # Ok::<(), omt::Error>(())
+    /// ```
+    ///
+    /// # When to Use This
+    ///
+    /// Only use this method if you need to:
+    /// - Call other sender methods concurrently while processing metadata
+    /// - Share the sender across threads with `Arc` without `Mutex` overhead
+    ///
+    /// For typical use cases, prefer [`receive_metadata`](Self::receive_metadata).
+    pub unsafe fn receive_metadata_unchecked(
+        &self,
+        timeout_ms: i32,
+    ) -> Result<Option<MediaFrame<'_>>> {
+        let ptr = unsafe { omt_sys::omt_send_receive(self.handle.as_ptr() as *mut _, timeout_ms) };
+
+        // SAFETY: Caller must ensure no previous frame from this sender is still alive.
+        // The C API reuses the frame buffer on each call to omt_send_receive.
         Ok(unsafe { MediaFrame::from_ffi_ptr(ptr) })
     }
 

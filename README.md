@@ -1,12 +1,14 @@
 # omt-rs
 
-Rust bindings for [Open Media Transport (OMT)](https://github.com/openmediatransport/libomt) - a protocol for low-latency transmission of video, audio, and metadata over IP networks.
+Unofficial Rust bindings for [Open Media Transport (OMT)](https://github.com/openmediatransport/libomt) - a protocol for low-latency transmission of video, audio, and metadata over IP networks.
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+**Important:** This is an **unofficial, third-party** project. It is not affiliated with or endorsed by the Open Media Transport project or its maintainers.
+
 ## Overview
 
-This repository provides Rust bindings for the Open Media Transport library, organized as a Cargo workspace with two crates:
+This repository provides unofficial Rust bindings for the Open Media Transport library, organized as a Cargo workspace with two crates:
 
 - **[`omt`](omt/)**: High-level, safe, and idiomatic Rust API (recommended for most users)
 - **[`omt-sys`](omt-sys/)**: Low-level FFI bindings to the C library
@@ -34,20 +36,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     if let Some(address) = sources.first() {
         // Create a receiver
-        let receiver = Receiver::new(
+        let mut receiver = Receiver::new(
             address,
-            FrameType::Video | FrameType::Audio,
+            FrameType::VIDEO | FrameType::AUDIO,
             PreferredVideoFormat::Uyvy,
             ReceiveFlags::NONE,
         )?;
         
-        // Receive frames
-        while let Some(frame) = receiver.receive_video(1000)? {
-            println!("Video: {}x{} @ {:.2} fps", 
-                frame.width(), 
-                frame.height(), 
-                frame.frame_rate()
-            );
+        // Receive frames (using safe API)
+        loop {
+            if let Some(frame) = receiver.receive(FrameType::VIDEO, 1000)? {
+                println!("Video: {}x{} @ {:.2} fps", 
+                    frame.width(), 
+                    frame.height(), 
+                    frame.frame_rate()
+                );
+            }
         }
     }
     
@@ -372,20 +376,18 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Related Projects
 
-- **[Open Media Transport](https://github.com/openmediatransport)**: The overall OMT project
-- **[libomt](https://github.com/openmediatransport/libomt)**: The underlying C implementation
+- **[Open Media Transport](https://github.com/openmediatransport)**: The official OMT project
+- **[libomt](https://github.com/openmediatransport/libomt)**: The official C implementation
 
 ## Support
 
-For issues or questions:
+**For issues with these unofficial Rust bindings:** Open an issue on this repository.
 
-- **Rust bindings**: Open an issue on this repository
-- **OMT protocol/C library**: See [openmediatransport](https://github.com/openmediatransport) or [libomt](https://github.com/openmediatransport/libomt)
+**For questions about the official OMT protocol or C library:** See [openmediatransport](https://github.com/openmediatransport) or [libomt](https://github.com/openmediatransport/libomt).
+
+**Disclaimer:** This is an unofficial third-party wrapper. For official OMT implementations and support, visit the [Open Media Transport organization](https://github.com/openmediatransport).
 
 ## Acknowledgments
 
 Open Media Transport is developed and maintained by the Open Media Transport Contributors.
 
----
-
-**Note**: This is an unofficial Rust binding. For official OMT implementations and specifications, visit the [Open Media Transport organization](https://github.com/openmediatransport).

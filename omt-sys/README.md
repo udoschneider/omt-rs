@@ -1,8 +1,8 @@
 # omt-sys
 
-Low-level FFI bindings to the [Open Media Transport (OMT)](https://github.com/openmediatransport/libomt) C library.
+Low-level FFI bindings for [Open Media Transport (OMT)](https://github.com/openmediatransport/libomt).
 
-Part of the [Open Media Transport](https://github.com/openmediatransport) project.
+**Note:** This is an **unofficial, third-party** Rust wrapper. It is not affiliated with or endorsed by the Open Media Transport project.
 
 [![Crates.io](https://img.shields.io/crates/v/omt-sys.svg)](https://crates.io/crates/omt-sys)
 [![Documentation](https://docs.rs/omt-sys/badge.svg)](https://docs.rs/omt-sys)

@@ -2,7 +2,7 @@
 
 High-level, safe, and idiomatic Rust bindings for the [Open Media Transport (OMT)](https://github.com/openmediatransport/libomt) library.
 
-Part of the [Open Media Transport](https://github.com/openmediatransport) project.
+**Note:** This is an **unofficial, third-party** Rust wrapper. It is not affiliated with or endorsed by the Open Media Transport project.
 
 [![Crates.io](https://img.shields.io/crates/v/omt.svg)](https://crates.io/crates/omt)
 [![Documentation](https://docs.rs/omt/badge.svg)](https://docs.rs/omt)
@@ -57,20 +57,22 @@ use omt::{Receiver, FrameType, PreferredVideoFormat, ReceiveFlags};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create receiver
-    let receiver = Receiver::new(
+    let mut receiver = Receiver::new(
         "omt://hostname:6400",
-        FrameType::Video | FrameType::Audio,
+        FrameType::VIDEO | FrameType::AUDIO,
         PreferredVideoFormat::Uyvy,
         ReceiveFlags::NONE,
     )?;
 
-    // Receive video frames
-    while let Some(frame) = receiver.receive_video(1000)? {
-        println!("Video: {}x{} @ {:.2} fps", 
-            frame.width(), 
-            frame.height(), 
-            frame.frame_rate()
-        );
+    // Receive video frames (using safe API)
+    loop {
+        if let Some(frame) = receiver.receive(FrameType::VIDEO, 1000)? {
+            println!("Video: {}x{} @ {:.2} fps", 
+                frame.width(), 
+                frame.height(), 
+                frame.frame_rate()
+            );
+        }
     }
 
     Ok(())
@@ -110,7 +112,69 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-See the [Frame Builders Guide](../docs/FRAME_BUILDERS.md) for detailed information on creating video, audio, and metadata frames.
+## Frame Lifetime and Safety
+
+### Safe API (Recommended)
+
+The recommended way to receive frames uses `receive()`, which requires mutable access:
+
+```rust
+let mut receiver = Receiver::new(...)?;
+
+loop {
+    if let Some(frame) = receiver.receive(FrameType::VIDEO, 1000)? {
+        // Process frame immediately
+        process_frame(&frame);
+        // Frame automatically dropped here
+    }
+}
+```
+
+**Why this is safe:** The borrow checker prevents holding multiple frames simultaneously, eliminating use-after-free bugs at compile time.
+
+### Unsafe API (Advanced)
+
+For performance-critical scenarios requiring concurrent access to statistics:
+
+```rust
+let receiver = Arc::new(Receiver::new(...)?);
+
+unsafe {
+    if let Some(frame) = receiver.receive_unchecked(FrameType::VIDEO, 1000)? {
+        process_frame(&frame);
+        // CRITICAL: Frame MUST be dropped before next receive_unchecked()
+    }
+}
+```
+
+**Safety requirements:** You must ensure no previous frame is still alive when calling `receive_unchecked()` again. Violating this causes undefined behavior.
+
+**Storing frames:** If you need to keep frames beyond the next receive call, you can clone them:
+
+```rust
+let receiver = Arc::new(Receiver::new(...)?);
+let mut stored_frames = Vec::new();
+
+for _ in 0..10 {
+    unsafe {
+        if let Some(frame) = receiver.receive_unchecked(FrameType::VIDEO, 1000)? {
+            // Clone creates a deep copy of all frame data - safe to store
+            stored_frames.push(frame.clone());
+        }
+    }
+}
+```
+
+**Warning:** Cloning performs a deep copy of all frame data (potentially ~64MB for 4K 16-bit RGBA). Use sparingly and only when necessary.
+
+### The Problem
+
+The underlying C library reuses internal frame buffers. When you call receive again, the previous frame's data becomes invalid. Rust's type system cannot express "this method invalidates results from this specific other method," so we provide:
+
+1. **Safe API (`receive`)**: Uses `&mut self` - the borrow checker enforces safety
+2. **Unsafe API (`receive_unchecked`)**: Uses `&self` - you must manually ensure safety
+
+**Default to the safe API.** Only use the unsafe API if you've profiled and confirmed that `Mutex` overhead is a bottleneck.
 
 ## Core Types
 
@@ -337,26 +401,103 @@ cargo run --example rebroadcast_bw -- "omt://hostname:6400"
 
 ## Thread Safety
 
-Both `Sender` and `Receiver` are `Send + Sync`, allowing safe use across threads:
+Both `Sender` and `Receiver` are `Send + Sync`, allowing safe use across threads.
+
+### Option 1: Separate Instances (Recommended)
+
+The simplest approach is to create separate receiver instances per thread:
 
 ```rust
 use std::thread;
+use omt::{Receiver, FrameType, PreferredVideoFormat, ReceiveFlags};
 
-let receiver = Receiver::new(/* ... */)?;
-let receiver_ref = &receiver;
+// Create separate receivers for each thread
+let mut video_receiver = Receiver::new("omt://localhost:6400", 
+    FrameType::VIDEO, PreferredVideoFormat::Uyvy, ReceiveFlags::NONE)?;
+let mut audio_receiver = Receiver::new("omt://localhost:6400",
+    FrameType::AUDIO, PreferredVideoFormat::Uyvy, ReceiveFlags::NONE)?;
 
 let video_thread = thread::spawn(move || {
-    while let Some(frame) = receiver_ref.receive_video(1000).unwrap() {
-        // Process video
+    loop {
+        if let Some(frame) = video_receiver.receive(FrameType::VIDEO, 1000).unwrap() {
+            // Process video
+        }
     }
 });
 
 let audio_thread = thread::spawn(move || {
-    while let Some(frame) = receiver_ref.receive_audio(1000).unwrap() {
-        // Process audio
+    loop {
+        if let Some(frame) = audio_receiver.receive(FrameType::AUDIO, 1000).unwrap() {
+            // Process audio
+        }
     }
 });
 ```
+
+### Option 2: Shared Instance with Mutex
+
+If you need to share a single receiver instance:
+
+```rust
+use std::sync::{Arc, Mutex};
+use std::thread;
+
+let receiver = Arc::new(Mutex::new(Receiver::new(/* ... */)?));
+
+let r1 = receiver.clone();
+let video_thread = thread::spawn(move || {
+    loop {
+        let mut guard = r1.lock().unwrap();
+        if let Some(frame) = guard.receive(FrameType::VIDEO, 1000).unwrap() {
+            // Process video frame
+        } // Lock released when guard is dropped
+    }
+});
+
+let r2 = receiver.clone();
+let stats_thread = thread::spawn(move || {
+    loop {
+        thread::sleep(Duration::from_secs(1));
+        let guard = r2.lock().unwrap();
+        let stats = guard.get_video_statistics();
+        println!("Stats: {}", stats);
+    }
+});
+```
+
+### Option 3: Unsafe API for Lock-Free Sharing
+
+For advanced use cases requiring concurrent statistics access without locks:
+
+```rust
+use std::sync::Arc;
+use std::thread;
+
+let receiver = Arc::new(Receiver::new(/* ... */)?);
+
+let r1 = receiver.clone();
+let video_thread = thread::spawn(move || {
+    loop {
+        unsafe {
+            if let Some(frame) = r1.receive_unchecked(FrameType::VIDEO, 1000).unwrap() {
+                // Process video - frame MUST be dropped before next receive_unchecked
+            }
+        }
+    }
+});
+
+let r2 = receiver.clone();
+let stats_thread = thread::spawn(move || {
+    loop {
+        thread::sleep(Duration::from_secs(1));
+        // Can call concurrently with receive_unchecked (uses &self)
+        let stats = r2.get_video_statistics();
+        println!("Stats: {}", stats);
+    }
+});
+```
+
+**Note:** Option 3 requires careful adherence to safety requirements. Use Option 1 or 2 unless you've profiled and confirmed lock contention is a bottleneck.
 
 ## Color Spaces
 
@@ -376,50 +517,30 @@ Video frames can have various flags set:
 - `VideoFlags::PREVIEW` - Preview frame (1/8th size)
 - `VideoFlags::HIGH_BIT_DEPTH` - High bit depth (P216/PA16)
 
-## Safety Documentation
+## Safety and Performance
 
-This crate provides comprehensive documentation about unsafe code areas and safety guarantees:
+### Memory Safety
 
-### Unsafe Areas Documentation
+This crate uses `unsafe` code only where necessary for FFI with the C library. All unsafe operations are:
+- Documented with `// SAFETY:` comments explaining the invariants
+- Encapsulated behind safe APIs
+- Protected by Rust's type system where possible
 
-- **[Unsafe Areas Guide](docs/unsafe-areas.md)** - Comprehensive documentation about unsafe areas in the high-level wrapper not covered by lifetimes and compile-time guarantees
-- **[Unsafe Summary](docs/unsafe-summary.md)** - Quick reference summary of unsafe areas and safety guidelines
-- **[Unsafe Code Guidelines](docs/unsafe-code-guidelines.md)** - Standards and conventions for unsafe code following AGENTS.md requirements
+### Thread Safety
 
-### Safety Philosophy
+Both `Sender` and `Receiver` implement `Send + Sync`, allowing safe concurrent use:
+- Different instances can be used concurrently without synchronization
+- Sharing the same instance requires `Arc<Mutex<>>` for the safe API
+- Statistics and tally methods use `&self` and can be called concurrently
 
-The OMT wrapper follows these safety principles:
+### Zero-Copy Performance
 
-1. **Minimize Unsafe** - Use Rust's type system where possible
-2. **Document Assumptions** - Clearly state safety requirements
-3. **Validate Inputs** - Check parameters before FFI calls
-4. **Provide Safe Abstractions** - Hide unsafe details from users
-5. **Enable Testing** - Make unsafe boundaries testable
+Both safe and unsafe receive APIs provide zero-copy access to frame data:
+- Direct pointers to C library buffers
+- No memory copies when accessing frame data
+- Suitable for high-bandwidth video (4K @ 60fps)
 
-### Key Safety Features
-
-- **Lifetime-bound frames**: `MediaFrame<'a>` ensures frames don't outlive their source
-- **RAII resource management**: Automatic cleanup of C library resources
-- **Thread safety**: `Send`/`Sync` implementations based on C library documentation
-- **Memory safety**: Validation of C pointers and buffer sizes
-- **Error recovery**: Graceful handling of C library errors
-
-### Common Safety Patterns
-
-```rust
-// Safe: Process frames immediately
-if let Some(frame) = receiver.receive(FrameType::VIDEO, 1000)? {
-    process_frame(&frame);
-    // Frame dropped here, before next receive()
-}
-
-// Safe: Use owned frames for storage
-let owned_frame = video_builder.build()?;
-let media_frame = owned_frame.as_media_frame();
-// owned_frame keeps data alive
-```
-
-See the [unsafe documentation](docs/unsafe-areas.md) for detailed safety guidelines and usage patterns.
+The safe API has no runtime overhead compared to the unsafe API in single-threaded scenarios.
 
 ## Contributing
 
@@ -431,10 +552,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Related Projects
 
-- [Open Media Transport](https://github.com/openmediatransport) - The overall OMT project
-- [libomt](https://github.com/openmediatransport/libomt) - The underlying C implementation
-- [omt-sys](../omt-sys) - Low-level FFI bindings for Rust
+- [Open Media Transport](https://github.com/openmediatransport) - The official OMT project
+- [libomt](https://github.com/openmediatransport/libomt) - The official C implementation
+- [omt-sys](../omt-sys) - Low-level FFI bindings for Rust (part of this unofficial wrapper)
 
 ## Support
 
-For issues specific to these Rust bindings, please open an issue on this repository. For questions about the OMT protocol or C library, refer to the [openmediatransport organization](https://github.com/openmediatransport) or the [libomt repository](https://github.com/openmediatransport/libomt).
+**For issues with these Rust bindings:** Please open an issue on this repository.
+
+**For questions about the OMT protocol or official C library:** Refer to the [openmediatransport organization](https://github.com/openmediatransport) or the [libomt repository](https://github.com/openmediatransport/libomt).
+
+**Disclaimer:** This is an unofficial third-party project. For official OMT implementations and support, visit the [Open Media Transport organization](https://github.com/openmediatransport).

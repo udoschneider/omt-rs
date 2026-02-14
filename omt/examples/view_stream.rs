@@ -62,7 +62,7 @@ fn main() {
 
     println!("Connecting to: {}", address);
 
-    let receiver = match Receiver::new(
+    let mut receiver = match Receiver::new(
         &address,
         FrameType::VIDEO,
         PreferredVideoFormat::Uyvy,

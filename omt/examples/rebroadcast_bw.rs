@@ -71,7 +71,7 @@ fn main() {
     println!("Connecting to: {}", address);
     println!("Rebroadcast name: {}", rebroadcast_name);
 
-    let receiver = match Receiver::new(
+    let mut receiver = match Receiver::new(
         &address,
         FrameType::VIDEO,
         PreferredVideoFormat::Uyvy,

@@ -13,10 +13,19 @@ use std::ptr::NonNull;
 /// The receiver automatically manages the connection and provides methods
 /// for receiving video, audio, and metadata frames.
 ///
-/// # Frame Lifetime
+/// # Frame Lifetime and Safety
 ///
-/// Frames returned by `receive()` are only valid until the next call to `receive()`.
-/// The lifetime parameter on `MediaFrame` enforces this constraint at compile time.
+/// Frames returned by receive methods are only valid until the next receive call.
+/// Two APIs are provided:
+///
+/// - [`receive`](Self::receive): Safe API requiring `&mut self`. This is the
+///   recommended method that prevents holding multiple frames through Rust's borrow checker.
+///
+/// - [`receive_unchecked`](Self::receive_unchecked): Unsafe API using `&self` for
+///   performance-critical scenarios where you need concurrent access to other receiver
+///   methods. Caller must ensure no previous frame is still held when calling this.
+///
+/// For most use cases, prefer `receive` for compile-time safety.
 pub struct Receiver {
     handle: NonNull<omt_sys::omt_receive_t>,
 }
@@ -67,7 +76,11 @@ impl Receiver {
             .ok_or(Error::ReceiverCreateFailed)
     }
 
-    /// Receives a frame of the specified type(s).
+    /// Receives a frame of the specified type(s) - safe version.
+    ///
+    /// This is the recommended API that requires mutable access to the receiver.
+    /// The borrow checker ensures you cannot hold multiple frames simultaneously,
+    /// preventing use-after-invalidation bugs at compile time.
     ///
     /// Blocks until a frame is available or the timeout expires.
     ///
@@ -82,22 +95,25 @@ impl Receiver {
     ///
     /// # Frame Lifetime
     ///
-    /// The returned frame is only valid until the next call to `receive()` on this receiver.
-    /// The frame's lifetime is tied to `&self` to prevent use-after-invalidation.
+    /// The returned frame is valid until the next call to any receive method on this receiver.
+    /// The frame's lifetime is tied to `&mut self`, ensuring exclusive access.
     ///
     /// # Examples
     ///
     /// ```no_run
     /// # use omt::{Receiver, FrameType, PreferredVideoFormat, ReceiveFlags};
-    /// # let receiver = Receiver::new("omt://localhost:6400", FrameType::VIDEO, PreferredVideoFormat::Uyvy, ReceiveFlags::NONE)?;
-    /// // Receive any video frame, wait up to 1 second
-    /// if let Some(frame) = receiver.receive(FrameType::VIDEO, 1000)? {
-    ///     println!("Received frame");
+    /// # let mut receiver = Receiver::new("omt://localhost:6400", FrameType::VIDEO, PreferredVideoFormat::Uyvy, ReceiveFlags::NONE)?;
+    /// // Receive and process frames in a loop
+    /// loop {
+    ///     if let Some(frame) = receiver.receive(FrameType::VIDEO, 1000)? {
+    ///         println!("Received frame with {} bytes", frame.data().len());
+    ///         // Process frame here
+    ///     } // frame dropped before next receive
     /// }
     /// # Ok::<(), omt::Error>(())
     /// ```
     pub fn receive(
-        &self,
+        &mut self,
         frame_types: FrameType,
         timeout_ms: i32,
     ) -> Result<Option<MediaFrame<'_>>> {
@@ -110,8 +126,111 @@ impl Receiver {
         };
 
         // SAFETY: The C API guarantees the frame data is valid until the next call to omt_receive.
-        // The lifetime bound to &self ensures the frame cannot outlive this receiver instance
-        // and cannot be used after the next receive() call (due to &self borrow).
+        // The lifetime bound to &mut self ensures the frame cannot outlive this receiver instance
+        // and prevents calling receive again while a frame exists (enforced by borrow checker).
+        Ok(unsafe { MediaFrame::from_ffi_ptr(ptr) })
+    }
+
+    /// Receives a frame of the specified type(s) - unsafe version.
+    ///
+    /// This is a performance-oriented API for advanced users who need concurrent access
+    /// to other receiver methods (like statistics) while holding frames. It uses `&self`
+    /// instead of `&mut self`, allowing more flexible usage patterns.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that no `MediaFrame` returned from a previous call to
+    /// `receive_unchecked` or `receive` on this receiver is still alive when calling
+    /// this method. The underlying C library reuses the frame buffer, so holding multiple
+    /// frames leads to undefined behavior (data corruption, crashes, or worse).
+    ///
+    /// This is a fundamental limitation of the C library that cannot be expressed in
+    /// Rust's type system without using `&mut self`.
+    ///
+    /// # Arguments
+    ///
+    /// * `frame_types` - The frame types to receive. Can combine multiple types.
+    /// * `timeout_ms` - Maximum time to wait in milliseconds.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(Some(frame))` if a frame was received, `Ok(None)` if timed out.
+    ///
+    /// # Correct Usage Pattern
+    ///
+    /// ```no_run
+    /// # use omt::{Receiver, FrameType, PreferredVideoFormat, ReceiveFlags};
+    /// # let receiver = Receiver::new("omt://localhost:6400", FrameType::VIDEO, PreferredVideoFormat::Uyvy, ReceiveFlags::NONE)?;
+    /// // CORRECT: Process and drop frame before next receive
+    /// loop {
+    ///     unsafe {
+    ///         if let Some(frame) = receiver.receive_unchecked(FrameType::VIDEO, 1000)? {
+    ///             process_frame(&frame);
+    ///         } // frame dropped here
+    ///     }
+    /// }
+    /// # Ok::<(), omt::Error>(())
+    /// ```
+    ///
+    /// # Incorrect Usage (Undefined Behavior!)
+    ///
+    /// ```no_run
+    /// # use omt::{Receiver, FrameType, PreferredVideoFormat, ReceiveFlags};
+    /// # let receiver = Receiver::new("omt://localhost:6400", FrameType::VIDEO, PreferredVideoFormat::Uyvy, ReceiveFlags::NONE)?;
+    /// // WRONG: Holding multiple frames
+    /// unsafe {
+    ///     let frame1 = receiver.receive_unchecked(FrameType::VIDEO, 1000)?;
+    ///     let frame2 = receiver.receive_unchecked(FrameType::VIDEO, 1000)?;
+    ///     // frame1's data is now INVALID! Accessing it is undefined behavior!
+    /// }
+    /// # Ok::<(), omt::Error>(())
+    /// ```
+    ///
+    /// # Storing Frames
+    ///
+    /// If you need to store frames beyond the next receive call, clone them:
+    ///
+    /// ```no_run
+    /// # use omt::{Receiver, FrameType, PreferredVideoFormat, ReceiveFlags};
+    /// # use std::sync::Arc;
+    /// # let receiver = Arc::new(Receiver::new("omt://localhost:6400", FrameType::VIDEO, PreferredVideoFormat::Uyvy, ReceiveFlags::NONE)?);
+    /// let mut frames = Vec::new();
+    /// for _ in 0..10 {
+    ///     unsafe {
+    ///         if let Some(frame) = receiver.receive_unchecked(FrameType::VIDEO, 1000)? {
+    ///             // Clone creates a deep copy - safe to store
+    ///             frames.push(frame.clone());
+    ///         }
+    ///     }
+    /// }
+    /// # Ok::<(), omt::Error>(())
+    /// ```
+    ///
+    /// **Warning:** Cloning copies all frame data (potentially ~64MB for 4K 16-bit RGBA).
+    /// Use sparingly.
+    ///
+    /// # When to Use This
+    ///
+    /// Only use this method if you need to:
+    /// - Call other receiver methods (like `get_video_statistics()`) concurrently while processing frames
+    /// - Share the receiver across threads with `Arc` without `Mutex` overhead
+    ///
+    /// For typical single-threaded receive loops, prefer [`receive`](Self::receive).
+    pub unsafe fn receive_unchecked(
+        &self,
+        frame_types: FrameType,
+        timeout_ms: i32,
+    ) -> Result<Option<MediaFrame<'_>>> {
+        let ptr = unsafe {
+            omt_sys::omt_receive(
+                self.handle.as_ptr() as *mut _,
+                frame_types.to_ffi(),
+                timeout_ms,
+            )
+        };
+
+        // SAFETY: Caller must ensure no previous frame from this receiver is still alive.
+        // The C API reuses the frame buffer on each call to omt_receive.
         Ok(unsafe { MediaFrame::from_ffi_ptr(ptr) })
     }
 

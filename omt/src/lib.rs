@@ -1,6 +1,7 @@
 //! High-level safe Rust bindings for the Open Media Transport (OMT) library.
 //!
-//! Part of the [Open Media Transport](https://github.com/openmediatransport) project.
+//! **Note:** This is an **unofficial, third-party** Rust wrapper. It is not affiliated
+//! with or endorsed by the Open Media Transport project.
 //!
 //! This crate provides idiomatic Rust wrappers around the low-level C bindings
 //! in the `omt-sys` crate. It offers safe, ergonomic APIs for sending and receiving
@@ -35,7 +36,7 @@
 //! ```no_run
 //! use omt::{Receiver, FrameType, PreferredVideoFormat, ReceiveFlags};
 //!
-//! let receiver = Receiver::new(
+//! let mut receiver = Receiver::new(
 //!     "omt://hostname:6400",
 //!     FrameType::VIDEO | FrameType::AUDIO,
 //!     PreferredVideoFormat::Uyvy,
@@ -54,7 +55,7 @@
 //! ```no_run
 //! use omt::{Receiver, FrameType, PreferredVideoFormat, ReceiveFlags};
 //!
-//! let receiver = Receiver::new(
+//! let mut receiver = Receiver::new(
 //!     "omt://hostname:6400",
 //!     FrameType::VIDEO,
 //!     PreferredVideoFormat::Uyvy,

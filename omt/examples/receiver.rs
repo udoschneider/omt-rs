@@ -55,7 +55,7 @@ fn connect_and_receive(address: &str) -> Result<(), Box<dyn std::error::Error>> 
     println!("\nConnecting to: {}", address);
 
     // Create receiver for video and audio
-    let receiver = Receiver::new(
+    let mut receiver = Receiver::new(
         address,
         FrameType::VIDEO | FrameType::AUDIO,
         PreferredVideoFormat::Uyvy,
