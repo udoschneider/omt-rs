@@ -7,6 +7,7 @@ Part of the [Open Media Transport](https://github.com/openmediatransport) projec
 [![Crates.io](https://img.shields.io/crates/v/omt.svg)](https://crates.io/crates/omt)
 [![Documentation](https://docs.rs/omt/badge.svg)](https://docs.rs/omt)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Safety](https://img.shields.io/badge/safety-documented-blue.svg)](docs/unsafe-areas.md)
 
 ## Overview
 
@@ -21,6 +22,7 @@ OMT is a protocol for low-latency transmission of video, audio, and metadata ove
 - 📊 **Statistics**: Built-in performance monitoring and metrics
 - 🎨 **Multiple codecs**: Support for various video formats (UYVY, BGRA, VMX1, etc.) and audio (FPA1)
 - 🏗️ **Frame builders**: Ergonomic builders for creating video, audio, and metadata frames
+- 📖 **Safety documentation**: Comprehensive documentation of unsafe areas and safety guarantees
 
 ## Installation
 
@@ -373,6 +375,51 @@ Video frames can have various flags set:
 - `VideoFlags::PRE_MULTIPLIED` - Premultiplied alpha
 - `VideoFlags::PREVIEW` - Preview frame (1/8th size)
 - `VideoFlags::HIGH_BIT_DEPTH` - High bit depth (P216/PA16)
+
+## Safety Documentation
+
+This crate provides comprehensive documentation about unsafe code areas and safety guarantees:
+
+### Unsafe Areas Documentation
+
+- **[Unsafe Areas Guide](docs/unsafe-areas.md)** - Comprehensive documentation about unsafe areas in the high-level wrapper not covered by lifetimes and compile-time guarantees
+- **[Unsafe Summary](docs/unsafe-summary.md)** - Quick reference summary of unsafe areas and safety guidelines
+- **[Unsafe Code Guidelines](docs/unsafe-code-guidelines.md)** - Standards and conventions for unsafe code following AGENTS.md requirements
+
+### Safety Philosophy
+
+The OMT wrapper follows these safety principles:
+
+1. **Minimize Unsafe** - Use Rust's type system where possible
+2. **Document Assumptions** - Clearly state safety requirements
+3. **Validate Inputs** - Check parameters before FFI calls
+4. **Provide Safe Abstractions** - Hide unsafe details from users
+5. **Enable Testing** - Make unsafe boundaries testable
+
+### Key Safety Features
+
+- **Lifetime-bound frames**: `MediaFrame<'a>` ensures frames don't outlive their source
+- **RAII resource management**: Automatic cleanup of C library resources
+- **Thread safety**: `Send`/`Sync` implementations based on C library documentation
+- **Memory safety**: Validation of C pointers and buffer sizes
+- **Error recovery**: Graceful handling of C library errors
+
+### Common Safety Patterns
+
+```rust
+// Safe: Process frames immediately
+if let Some(frame) = receiver.receive(FrameType::VIDEO, 1000)? {
+    process_frame(&frame);
+    // Frame dropped here, before next receive()
+}
+
+// Safe: Use owned frames for storage
+let owned_frame = video_builder.build()?;
+let media_frame = owned_frame.as_media_frame();
+// owned_frame keeps data alive
+```
+
+See the [unsafe documentation](docs/unsafe-areas.md) for detailed safety guidelines and usage patterns.
 
 ## Contributing
 
