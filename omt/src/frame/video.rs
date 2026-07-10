@@ -4,8 +4,9 @@ use crate::frame::MediaFrame;
 use crate::types::{Codec, ColorSpace, FrameRate, VideoFlags};
 use crate::video_conversion::{
     bgra_to_rgb8, bgra_to_rgba8, get_yuv_matrix, get_yuv_range, nv12_to_rgb8, nv12_to_rgba8,
-    p216_to_rgb16, p216_to_rgba16, pa16_to_rgb16, pa16_to_rgba16, uyva_to_rgb8, uyva_to_rgba8,
-    uyvy_to_rgb8, uyvy_to_rgba8, yuy2_to_rgb8, yuy2_to_rgba8, yv12_to_rgb8, yv12_to_rgba8,
+    p216_to_rgb16, p216_to_rgba16, pa16_to_rgb16, pa16_to_rgba16, required_input_len, uyva_to_rgb8,
+    uyva_to_rgba8, uyvy_to_rgb8, uyvy_to_rgba8, yuy2_to_rgb8, yuy2_to_rgba8, yv12_to_rgb8,
+    yv12_to_rgba8,
 };
 use rgb::{RGB8, RGB16, RGBA8, RGBA16};
 
@@ -112,7 +113,17 @@ impl<'a> MediaFrame<'a> {
         let yuv_range = get_yuv_range(self);
         let yuv_matrix = get_yuv_matrix(self);
 
-        match self.codec()? {
+        let codec = self.codec()?;
+
+        // Reject frames whose declared dimensions do not fit the data buffer.
+        // `width`/`height`/`stride` are attacker-controlled, so this guard (with
+        // its overflow-checked arithmetic) is what keeps the converters below
+        // from indexing out of bounds or over-allocating on a malformed frame.
+        if raw_data.len() < required_input_len(codec, width, height, stride)? {
+            return None;
+        }
+
+        match codec {
             Codec::Uyvy => uyvy_to_rgb8(raw_data, width, height, stride, yuv_range, yuv_matrix),
             Codec::Yuy2 => yuy2_to_rgb8(raw_data, width, height, stride, yuv_range, yuv_matrix),
             Codec::Nv12 => nv12_to_rgb8(raw_data, width, height, stride, yuv_range, yuv_matrix),
@@ -149,7 +160,17 @@ impl<'a> MediaFrame<'a> {
         let yuv_range = get_yuv_range(self);
         let yuv_matrix = get_yuv_matrix(self);
 
-        match self.codec()? {
+        let codec = self.codec()?;
+
+        // Reject frames whose declared dimensions do not fit the data buffer.
+        // `width`/`height`/`stride` are attacker-controlled, so this guard (with
+        // its overflow-checked arithmetic) is what keeps the converters below
+        // from indexing out of bounds or over-allocating on a malformed frame.
+        if raw_data.len() < required_input_len(codec, width, height, stride)? {
+            return None;
+        }
+
+        match codec {
             Codec::Uyvy => uyvy_to_rgba8(raw_data, width, height, stride, yuv_range, yuv_matrix),
             Codec::Yuy2 => yuy2_to_rgba8(raw_data, width, height, stride, yuv_range, yuv_matrix),
             Codec::Nv12 => nv12_to_rgba8(raw_data, width, height, stride, yuv_range, yuv_matrix),
@@ -188,7 +209,17 @@ impl<'a> MediaFrame<'a> {
         let yuv_range = get_yuv_range(self);
         let yuv_matrix = get_yuv_matrix(self);
 
-        match self.codec()? {
+        let codec = self.codec()?;
+
+        // Reject frames whose declared dimensions do not fit the data buffer.
+        // `width`/`height`/`stride` are attacker-controlled, so this guard (with
+        // its overflow-checked arithmetic) is what keeps the converters below
+        // from indexing out of bounds or over-allocating on a malformed frame.
+        if raw_data.len() < required_input_len(codec, width, height, stride)? {
+            return None;
+        }
+
+        match codec {
             Codec::Uyvy | Codec::Yuy2 | Codec::Nv12 | Codec::Yv12 | Codec::Bgra => None,
             Codec::Uyva => None,
             Codec::P216 => p216_to_rgb16(raw_data, width, height, stride, yuv_range, yuv_matrix),
@@ -224,7 +255,17 @@ impl<'a> MediaFrame<'a> {
         let yuv_range = get_yuv_range(self);
         let yuv_matrix = get_yuv_matrix(self);
 
-        match self.codec()? {
+        let codec = self.codec()?;
+
+        // Reject frames whose declared dimensions do not fit the data buffer.
+        // `width`/`height`/`stride` are attacker-controlled, so this guard (with
+        // its overflow-checked arithmetic) is what keeps the converters below
+        // from indexing out of bounds or over-allocating on a malformed frame.
+        if raw_data.len() < required_input_len(codec, width, height, stride)? {
+            return None;
+        }
+
+        match codec {
             Codec::Uyvy | Codec::Yuy2 | Codec::Nv12 | Codec::Yv12 | Codec::Bgra => None,
             Codec::Uyva => None,
             Codec::P216 => p216_to_rgba16(raw_data, width, height, stride, yuv_range, yuv_matrix),
