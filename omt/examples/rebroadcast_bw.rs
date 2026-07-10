@@ -35,8 +35,8 @@
 
 use clap::Parser;
 use omt::{
-    Codec, ColorSpace, Discovery, FrameType, PreferredVideoFormat, Quality, ReceiveFlags, Receiver,
-    Sender, VideoFrameBuilder,
+    Codec, ColorSpace, Discovery, FrameRate, FrameType, PreferredVideoFormat, Quality,
+    ReceiveFlags, Receiver, Sender, VideoFrameBuilder,
 };
 
 use std::time::Duration;
@@ -108,8 +108,7 @@ fn main() {
                 }
 
                 let timestamp = frame.timestamp();
-                let frame_rate_n = frame.frame_rate_numerator();
-                let frame_rate_d = frame.frame_rate_denominator();
+                let frame_rate = frame.frame_rate_rational().unwrap_or(FrameRate::fps_30());
                 let aspect_ratio = frame.aspect_ratio();
                 let color_space = frame.color_space().unwrap_or(ColorSpace::Undefined);
                 let flags = frame.flags();
@@ -129,7 +128,7 @@ fn main() {
                     .dimensions(width, height)
                     .stride(stride)
                     .flags(flags)
-                    .frame_rate(frame_rate_n, frame_rate_d)
+                    .frame_rate(frame_rate)
                     .aspect_ratio(aspect_ratio)
                     .color_space(color_space)
                     .timestamp(timestamp)

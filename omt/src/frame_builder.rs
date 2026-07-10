@@ -6,7 +6,7 @@
 
 use crate::error::{Error, Result};
 use crate::frame::MediaFrame;
-use crate::types::{Codec, ColorSpace, FrameType, VideoFlags};
+use crate::types::{Codec, ColorSpace, FrameRate, FrameType, VideoFlags};
 use std::ffi::CString;
 
 /// Builder for creating video frames.
@@ -14,14 +14,14 @@ use std::ffi::CString;
 /// # Examples
 ///
 /// ```no_run
-/// use omt::{VideoFrameBuilder, Codec, VideoFlags};
+/// use omt::{VideoFrameBuilder, Codec, FrameRate, VideoFlags};
 ///
 /// let data = vec![0u8; 1920 * 1080 * 2]; // UYVY data
 /// let frame = VideoFrameBuilder::new()
 ///     .codec(Codec::Uyvy)
 ///     .dimensions(1920, 1080)
 ///     .stride(1920 * 2)
-///     .frame_rate(30, 1)
+///     .frame_rate(FrameRate::fps_30())
 ///     .aspect_ratio(16.0 / 9.0)
 ///     .data(data)
 ///     .build()?;
@@ -34,8 +34,7 @@ pub struct VideoFrameBuilder {
     height: i32,
     stride: Option<i32>,
     flags: VideoFlags,
-    frame_rate_n: i32,
-    frame_rate_d: i32,
+    frame_rate: FrameRate,
     aspect_ratio: f32,
     color_space: ColorSpace,
     timestamp: i64,
@@ -52,8 +51,7 @@ impl VideoFrameBuilder {
             height: 0,
             stride: None,
             flags: VideoFlags::NONE,
-            frame_rate_n: 30,
-            frame_rate_d: 1,
+            frame_rate: FrameRate::fps_30(),
             aspect_ratio: 16.0 / 9.0,
             color_space: ColorSpace::Undefined,
             timestamp: -1,
@@ -104,12 +102,12 @@ impl VideoFrameBuilder {
         self
     }
 
-    /// Sets the frame rate as numerator and denominator.
+    /// Sets the frame rate.
     ///
-    /// For example: `frame_rate(60, 1)` for 60fps, `frame_rate(30000, 1001)` for 29.97fps.
-    pub fn frame_rate(mut self, numerator: i32, denominator: i32) -> Self {
-        self.frame_rate_n = numerator;
-        self.frame_rate_d = denominator;
+    /// For example: `frame_rate(FrameRate::fps_60())` for 60fps, or
+    /// `frame_rate(FrameRate::new(30000, 1001)?)` for 29.97fps.
+    pub fn frame_rate(mut self, frame_rate: FrameRate) -> Self {
+        self.frame_rate = frame_rate;
         self
     }
 
@@ -204,8 +202,8 @@ impl VideoFrameBuilder {
             height: self.height,
             stride,
             flags: self.flags,
-            frame_rate_n: self.frame_rate_n,
-            frame_rate_d: self.frame_rate_d,
+            frame_rate_n: self.frame_rate.numerator(),
+            frame_rate_d: self.frame_rate.denominator(),
             aspect_ratio: self.aspect_ratio,
             color_space: self.color_space,
             sample_rate: 0,

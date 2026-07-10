@@ -1,7 +1,8 @@
 //! Integration tests for frame builders.
 
 use omt::{
-    AudioFrameBuilder, Codec, ColorSpace, MetadataFrameBuilder, VideoFlags, VideoFrameBuilder,
+    AudioFrameBuilder, Codec, ColorSpace, FrameRate, MetadataFrameBuilder, VideoFlags,
+    VideoFrameBuilder,
 };
 
 #[test]
@@ -14,7 +15,7 @@ fn test_video_frame_builder_basic() {
         .codec(Codec::Uyvy)
         .dimensions(width as i32, height as i32)
         .stride((width * 2) as i32)
-        .frame_rate(30, 1)
+        .frame_rate(FrameRate::fps_30())
         .aspect_ratio(16.0 / 9.0)
         .data(data)
         .build()

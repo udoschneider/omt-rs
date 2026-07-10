@@ -23,8 +23,8 @@
 
 use image::GenericImageView;
 use omt::{
-    AudioFrameBuilder, Codec, MetadataFrameBuilder, Quality, Sender, SenderInfo, VideoFlags,
-    VideoFrameBuilder,
+    AudioFrameBuilder, Codec, FrameRate, MetadataFrameBuilder, Quality, Sender, SenderInfo,
+    VideoFlags, VideoFrameBuilder,
 };
 use std::time::Duration;
 
@@ -160,7 +160,7 @@ fn send_video_frame(
         .codec(Codec::Bgra)
         .dimensions(testcard.width, testcard.height)
         .stride(testcard.width * 4)
-        .frame_rate(30, 1)
+        .frame_rate(FrameRate::fps_30())
         .aspect_ratio(testcard.width as f32 / testcard.height as f32)
         .flags(VideoFlags::NONE)
         .timestamp(timestamp)

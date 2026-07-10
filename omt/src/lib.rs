@@ -120,8 +120,8 @@ pub use settings::Settings;
 pub use statistics::Statistics;
 pub use tally::Tally;
 pub use types::{
-    Codec, ColorSpace, FrameType, PreferredVideoFormat, Quality, ReceiveFlags, SenderInfo,
-    VideoFlags,
+    Codec, ColorSpace, FrameRate, FrameRateError, FrameType, PreferredVideoFormat, Quality,
+    ReceiveFlags, SenderInfo, VideoFlags,
 };
 
 /// Maximum length for string fields in OMT structures.

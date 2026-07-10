@@ -1,7 +1,7 @@
 //! Video-specific methods for MediaFrame.
 
 use crate::frame::MediaFrame;
-use crate::types::{Codec, ColorSpace, VideoFlags};
+use crate::types::{Codec, ColorSpace, FrameRate, VideoFlags};
 use crate::video_conversion::{
     bgra_to_rgb8, bgra_to_rgba8, get_yuv_matrix, get_yuv_range, nv12_to_rgb8, nv12_to_rgba8,
     p216_to_rgb16, p216_to_rgba16, pa16_to_rgb16, pa16_to_rgba16, uyva_to_rgb8, uyva_to_rgba8,
@@ -61,6 +61,16 @@ impl<'a> MediaFrame<'a> {
         } else {
             0.0
         }
+    }
+
+    /// Returns the frame rate as a rational [`FrameRate`], if valid.
+    ///
+    /// Returns `None` if the frame's numerator or denominator are not positive
+    /// (e.g. for audio or metadata frames, or frames with an unset frame rate).
+    ///
+    /// This method is only meaningful for video frames.
+    pub fn frame_rate_rational(&self) -> Option<FrameRate> {
+        FrameRate::new(self.ffi.FrameRateN, self.ffi.FrameRateD).ok()
     }
 
     /// Returns the display aspect ratio.
