@@ -231,13 +231,22 @@ impl Sender {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that no `MediaFrame` returned from a previous call to
-    /// `receive_metadata_unchecked` or `receive_metadata` on this sender is still alive
-    /// when calling this method. The underlying C library reuses the frame buffer, so holding
-    /// multiple frames leads to undefined behavior (data corruption, crashes, or worse).
+    /// The caller must uphold **both** of the following invariants:
     ///
-    /// This is a fundamental limitation of the C library that cannot be expressed in
-    /// Rust's type system without using `&mut self`.
+    /// 1. No `MediaFrame` returned from a previous call to `receive_metadata_unchecked`
+    ///    or `receive_metadata` on this sender may be alive when calling this method.
+    ///    The underlying C library reuses the frame buffer, so holding multiple frames
+    ///    leads to undefined behavior (data corruption, crashes, or worse).
+    ///
+    /// 2. Calls to `receive_metadata_unchecked`/`receive_metadata` on the same sender
+    ///    must never overlap in time across threads. The C library's marshalling layer
+    ///    frees the previous frame buffer and allocates a new one without any locking,
+    ///    so two concurrent metadata-receive calls on one instance race and can
+    ///    double-free. Other `&self` methods may be called concurrently; only the
+    ///    metadata-receive calls themselves must be serialized.
+    ///
+    /// These are fundamental limitations of the C library that cannot be expressed
+    /// in Rust's type system without using `&mut self`.
     ///
     /// # Arguments
     ///
@@ -281,8 +290,13 @@ impl Sender {
     /// # When to Use This
     ///
     /// Only use this method if you need to:
-    /// - Call other sender methods concurrently while processing metadata
-    /// - Share the sender across threads with `Arc` without `Mutex` overhead
+    /// - Call other sender methods from another thread while a single thread
+    ///   processes incoming metadata
+    ///
+    /// When sharing the sender across threads via `Arc`, the metadata-receive calls
+    /// themselves must still be serialized (see the second safety invariant above) —
+    /// e.g. keep all receiving on one thread, or guard it with a `Mutex`. Sharing
+    /// via `Arc` without a `Mutex` is only sound for the non-receiving methods.
     ///
     /// For typical use cases, prefer [`receive_metadata`](Self::receive_metadata).
     pub unsafe fn receive_metadata_unchecked(
@@ -291,8 +305,10 @@ impl Sender {
     ) -> Result<Option<MediaFrame<'_>>> {
         let ptr = unsafe { omt_sys::omt_send_receive(self.handle.as_ptr() as *mut _, timeout_ms) };
 
-        // SAFETY: Caller must ensure no previous frame from this sender is still alive.
-        // The C API reuses the frame buffer on each call to omt_send_receive.
+        // SAFETY: Per this function's safety contract, the caller guarantees no
+        // previously returned frame is still alive and that metadata-receive calls on
+        // this instance never overlap. The C API reuses (and reallocates) the frame
+        // buffer on each call to omt_send_receive.
         Ok(unsafe { MediaFrame::from_ffi_ptr(ptr) })
     }
 
@@ -345,6 +361,11 @@ impl Drop for Sender {
     }
 }
 
-// SAFETY: The underlying C library is thread-safe
+// SAFETY: A Sender owns an opaque C handle that may be moved between threads (Send).
+// Sync is sound for the safe API: every `&self` method other than the `unsafe`
+// receive_metadata_unchecked delegates to internally-synchronized operations in the
+// C library. The one unsynchronized path — the reused metadata-receive frame buffer —
+// is reachable only through `receive_metadata` (which takes `&mut self`) or
+// `receive_metadata_unchecked` (whose safety contract forbids concurrent calls).
 unsafe impl Send for Sender {}
 unsafe impl Sync for Sender {}

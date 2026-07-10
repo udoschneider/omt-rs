@@ -31,7 +31,9 @@ impl<'a> MediaFrame<'a> {
     /// This method is only meaningful for audio frames.
     ///
     /// Returns `None` if the data is not properly aligned or sized for f32 conversion.
-    pub fn as_f32_planar(&self) -> Option<Vec<&'a [f32]>> {
+    ///
+    /// The returned slices borrow from `self` and cannot outlive this frame.
+    pub fn as_f32_planar(&self) -> Option<Vec<&[f32]>> {
         let data = self.data();
         let samples_per_channel = self.samples_per_channel() as usize;
         let channels = self.channels() as usize;
@@ -58,7 +60,8 @@ impl<'a> MediaFrame<'a> {
                 // 1. The data length matches expected size
                 // 2. The pointer is properly aligned for f32
                 // 3. The slice bounds are within the valid data range
-                // 4. The lifetime 'a ensures the data remains valid
+                // 4. The result borrows `self` (via `data`), so the f32 slices
+                //    cannot outlive the frame that owns/backs the byte buffer
                 let f32_slice = unsafe {
                     slice::from_raw_parts(plane_data.as_ptr() as *const f32, samples_per_channel)
                 };

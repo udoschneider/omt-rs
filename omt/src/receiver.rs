@@ -139,13 +139,22 @@ impl Receiver {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that no `MediaFrame` returned from a previous call to
-    /// `receive_unchecked` or `receive` on this receiver is still alive when calling
-    /// this method. The underlying C library reuses the frame buffer, so holding multiple
-    /// frames leads to undefined behavior (data corruption, crashes, or worse).
+    /// The caller must uphold **both** of the following invariants:
     ///
-    /// This is a fundamental limitation of the C library that cannot be expressed in
-    /// Rust's type system without using `&mut self`.
+    /// 1. No `MediaFrame` returned from a previous call to `receive_unchecked` or
+    ///    `receive` on this receiver may be alive when calling this method. The
+    ///    underlying C library reuses the frame buffer, so holding multiple frames
+    ///    leads to undefined behavior (data corruption, crashes, or worse).
+    ///
+    /// 2. Calls to `receive_unchecked`/`receive` on the same receiver must never
+    ///    overlap in time across threads. The C library's marshalling layer frees
+    ///    the previous frame buffer and allocates a new one without any locking, so
+    ///    two concurrent receive calls on one instance race and can double-free.
+    ///    Other `&self` methods (statistics, tally, flags) may be called
+    ///    concurrently; only the receive calls themselves must be serialized.
+    ///
+    /// These are fundamental limitations of the C library that cannot be expressed
+    /// in Rust's type system without using `&mut self`.
     ///
     /// # Arguments
     ///
@@ -213,8 +222,13 @@ impl Receiver {
     /// # When to Use This
     ///
     /// Only use this method if you need to:
-    /// - Call other receiver methods (like `get_video_statistics()`) concurrently while processing frames
-    /// - Share the receiver across threads with `Arc` without `Mutex` overhead
+    /// - Call other receiver methods (like `get_video_statistics()`) from another
+    ///   thread while a single receive thread processes frames
+    ///
+    /// When sharing the receiver across threads via `Arc`, the receive calls
+    /// themselves must still be serialized (see the second safety invariant above) —
+    /// e.g. keep all receiving on one thread, or guard it with a `Mutex`. Sharing
+    /// via `Arc` without a `Mutex` is only sound for the non-receiving methods.
     ///
     /// For typical single-threaded receive loops, prefer [`receive`](Self::receive).
     pub unsafe fn receive_unchecked(
@@ -230,8 +244,10 @@ impl Receiver {
             )
         };
 
-        // SAFETY: Caller must ensure no previous frame from this receiver is still alive.
-        // The C API reuses the frame buffer on each call to omt_receive.
+        // SAFETY: Per this function's safety contract, the caller guarantees no
+        // previously returned frame is still alive and that receive calls on this
+        // instance never overlap. The C API reuses (and reallocates) the frame
+        // buffer on each call to omt_receive.
         Ok(unsafe { MediaFrame::from_ffi_ptr(ptr) })
     }
 
@@ -351,6 +367,11 @@ impl Drop for Receiver {
     }
 }
 
-// SAFETY: The underlying C library is thread-safe
+// SAFETY: A Receiver owns an opaque C handle that may be moved between threads (Send).
+// Sync is sound for the safe API: every `&self` method other than the `unsafe`
+// receive_unchecked delegates to internally-synchronized operations in the C library.
+// The one unsynchronized path — the reused receive frame buffer — is reachable only
+// through `receive` (which takes `&mut self`) or `receive_unchecked` (whose safety
+// contract forbids concurrent receive calls on the same instance).
 unsafe impl Send for Receiver {}
 unsafe impl Sync for Receiver {}

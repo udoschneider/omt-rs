@@ -108,13 +108,33 @@ impl<'a> MediaFrame<'a> {
 
     /// Returns the frame data as a byte slice.
     ///
-    /// The returned slice is valid for the lifetime of this MediaFrame.
-    pub fn data(&self) -> &'a [u8] {
+    /// The returned slice borrows from `self` and cannot outlive this frame. For
+    /// borrowed frames the buffer is owned by the C library and stays valid until
+    /// the next receive call (enforced on the safe path by the receiver's
+    /// `&mut self` borrow); for cloned frames the buffer is owned by this frame.
+    ///
+    /// Because the slice borrows `self`, it cannot dangle past the frame's `Drop`.
+    /// The following use-after-free is rejected at compile time:
+    ///
+    /// ```compile_fail
+    /// # use omt::MediaFrame;
+    /// # fn demo(frame: &MediaFrame<'_>) {
+    /// let slice: &[u8];
+    /// {
+    ///     let owned = frame.clone(); // deep copy; owns its buffer
+    ///     slice = owned.data();
+    /// } // `owned` dropped here, its buffer freed
+    /// let _ = slice[0]; // ERROR: `slice` borrows `owned`, which does not live long enough
+    /// # }
+    /// ```
+    pub fn data(&self) -> &[u8] {
         if self.ffi.Data.is_null() || self.ffi.DataLength <= 0 {
             &[]
         } else {
-            // SAFETY: The lifetime 'a ensures this slice cannot outlive the source data.
-            // The C API guarantees Data is valid for the frame's lifetime.
+            // SAFETY: The returned slice is tied to the borrow of `self`, so it
+            // cannot outlive the frame — and therefore cannot outlive a cloned
+            // frame's owned buffer (freed in Drop) nor a borrowed frame's C buffer.
+            // `DataLength` is > 0 here and gives the length of `Data` in bytes.
             unsafe {
                 slice::from_raw_parts(self.ffi.Data as *const u8, self.ffi.DataLength as usize)
             }
@@ -123,13 +143,14 @@ impl<'a> MediaFrame<'a> {
 
     /// Returns the compressed data (VMX1) if available.
     ///
-    /// The returned slice is valid for the lifetime of this MediaFrame.
-    pub fn compressed_data(&self) -> &'a [u8] {
+    /// The returned slice borrows from `self` and cannot outlive this frame.
+    pub fn compressed_data(&self) -> &[u8] {
         if self.ffi.CompressedData.is_null() || self.ffi.CompressedLength <= 0 {
             &[]
         } else {
-            // SAFETY: The lifetime 'a ensures this slice cannot outlive the source data.
-            // The C API guarantees CompressedData is valid for the frame's lifetime.
+            // SAFETY: The returned slice is tied to the borrow of `self`, so it
+            // cannot outlive the frame (and thus not the underlying buffer).
+            // `CompressedLength` is > 0 here and gives the length in bytes.
             unsafe {
                 slice::from_raw_parts(
                     self.ffi.CompressedData as *const u8,
@@ -144,8 +165,8 @@ impl<'a> MediaFrame<'a> {
     /// Returns an empty string if no metadata is present.
     /// If the metadata is not valid UTF-8, this will return an empty string.
     ///
-    /// The returned string slice is valid for the lifetime of this MediaFrame.
-    pub fn frame_metadata(&self) -> &'a str {
+    /// The returned string slice borrows from `self` and cannot outlive this frame.
+    pub fn frame_metadata(&self) -> &str {
         if self.ffi.FrameMetadata.is_null() || self.ffi.FrameMetadataLength <= 0 {
             ""
         } else {
