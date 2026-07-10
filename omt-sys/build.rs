@@ -16,6 +16,11 @@ fn main() {
     // the resulting bindings.
     let bindings = bindgen::Builder::default()
         .prepend_enum_name(false)
+        // Don't copy the C header's Doxygen comments into the bindings: rustdoc
+        // parses their `@param[in]`/`[out]` markers as (broken) intra-doc links,
+        // which fails `cargo doc -D warnings`. The vendored `libomt.h` remains
+        // the authoritative reference for these declarations.
+        .generate_comments(false)
         // The input header we would like to generate
         // bindings for.
         .header("libomt.h")
