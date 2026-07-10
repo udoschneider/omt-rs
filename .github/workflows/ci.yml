@@ -26,7 +26,7 @@ jobs:
     name: Lint (fmt + clippy)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install libclang (required by bindgen)
         run: sudo apt-get update && sudo apt-get install -y clang libclang-dev
@@ -58,18 +58,18 @@ jobs:
       # Check out this repo into a subdirectory so the upstream repos can sit
       # next to it as siblings, which the libomt build scripts require.
       - name: Checkout omt-rs
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: omt-rs
 
       - name: Checkout libomtnet (managed dependency)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: openmediatransport/libomtnet
           path: libomtnet
 
       - name: Checkout libomt (native C wrapper)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: openmediatransport/libomt
           path: libomt
@@ -108,6 +108,21 @@ jobs:
       - name: cargo build --examples
         working-directory: omt-rs
         run: cargo build --workspace --examples
+
+      # Discovery browses via Avahi/mDNS; without a running daemon the C library
+      # gets a null Avahi client and abort()s the whole test process (SIGABRT).
+      # The discovery_safety_tests deliberately exercise this path, so provide a
+      # real daemon rather than skipping them.
+      - name: Start Avahi daemon (required for discovery tests)
+        run: |
+          sudo apt-get install -y avahi-daemon libavahi-client3
+          sudo systemctl start dbus
+          sudo systemctl start avahi-daemon
+          for _ in $(seq 1 10); do
+            systemctl is-active --quiet avahi-daemon && break
+            sleep 1
+          done
+          systemctl is-active avahi-daemon
 
       - name: cargo test
         working-directory: omt-rs
