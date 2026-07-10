@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: "1.93.0"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Fast tier: formatting + lints. Does NOT need libomt.so, because `fmt` and
+  # `clippy` only type-check (no final link). bindgen still runs during the
+  # build-script phase, so libclang must be present; the C header itself is
+  # vendored at omt-sys/libomt.h.
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint (fmt + clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install libclang (required by bindgen)
+        run: sudo apt-get update && sudo apt-get install -y clang libclang-dev
+
+      - name: Install Rust ${{ env.RUST_TOOLCHAIN }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  # ---------------------------------------------------------------------------
+  # Full tier: build the native libomt from the upstream .NET sources, install
+  # it, then run the real test suite (unit + integration + doctests), build the
+  # examples, and check the docs. This is what verifies the memory-safety
+  # invariants the crate documents.
+  # ---------------------------------------------------------------------------
+  build-and-test:
+    name: Build & test (native libomt)
+    runs-on: ubuntu-latest
+    steps:
+      # Check out this repo into a subdirectory so the upstream repos can sit
+      # next to it as siblings, which the libomt build scripts require.
+      - name: Checkout omt-rs
+        uses: actions/checkout@v4
+        with:
+          path: omt-rs
+
+      - name: Checkout libomtnet (managed dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: openmediatransport/libomtnet
+          path: libomtnet
+
+      - name: Checkout libomt (native C wrapper)
+        uses: actions/checkout@v4
+        with:
+          repository: openmediatransport/libomt
+          path: libomt
+
+      - name: Install native toolchain for .NET AOT
+        run: sudo apt-get update && sudo apt-get install -y clang lld zlib1g-dev build-essential libclang-dev
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      # Build order matters: libomt references a prebuilt libomtnet.dll by path.
+      - name: Build libomtnet (Release)
+        working-directory: libomtnet/build
+        run: bash ./buildall.sh
+
+      - name: Build libomt (Native AOT, linux-x64)
+        working-directory: libomt/build
+        run: bash ./buildlinuxx64.sh
+
+      - name: Install libomt.so
+        run: |
+          sudo cp libomt/bin/Release/net8.0/linux-x64/native/libomt.so /usr/local/lib/
+          sudo ldconfig
+
+      - name: Install Rust ${{ env.RUST_TOOLCHAIN }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: omt-rs
+
+      - name: cargo build --examples
+        working-directory: omt-rs
+        run: cargo build --workspace --examples
+
+      - name: cargo test
+        working-directory: omt-rs
+        run: cargo test --workspace
+
+      - name: cargo doc
+        working-directory: omt-rs
+        run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
