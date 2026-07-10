@@ -89,8 +89,10 @@ pub fn p216_to_rgb16(
         return None;
     }
 
-    // Reinterpret raw bytes as u16 slice
-    let data_u16: &[u16] = bytemuck::cast_slice(&raw_data[..total_u16_elements * 2]);
+    // Reinterpret raw bytes as u16 slice. `try_cast_slice` returns an error
+    // (rather than panicking like `cast_slice`) if the network-supplied buffer
+    // is not 2-byte aligned; treat that as an undecodable frame.
+    let data_u16: &[u16] = bytemuck::try_cast_slice(&raw_data[..total_u16_elements * 2]).ok()?;
 
     // Extract Y plane
     let y_plane = &data_u16[0..y_plane_size];
@@ -183,8 +185,10 @@ pub fn p216_to_rgba16(
         return None;
     }
 
-    // Reinterpret raw bytes as u16 slice
-    let data_u16: &[u16] = bytemuck::cast_slice(&raw_data[..total_u16_elements * 2]);
+    // Reinterpret raw bytes as u16 slice. `try_cast_slice` returns an error
+    // (rather than panicking like `cast_slice`) if the network-supplied buffer
+    // is not 2-byte aligned; treat that as an undecodable frame.
+    let data_u16: &[u16] = bytemuck::try_cast_slice(&raw_data[..total_u16_elements * 2]).ok()?;
 
     // Extract Y plane
     let y_plane = &data_u16[0..y_plane_size];
@@ -319,7 +323,9 @@ pub fn pa16_to_rgba16(
     // Extract the strided alpha plane (follows the Y + UV planes).
     let alpha_start = plane_size * 2 * 2; // (Y + UV) planes, u16 -> byte offset
     let alpha_end = alpha_start + plane_size * 2;
-    let alpha_plane: &[u16] = bytemuck::cast_slice(&raw_data[alpha_start..alpha_end]);
+    // `try_cast_slice` returns an error (rather than panicking like `cast_slice`)
+    // if the alpha sub-slice is not 2-byte aligned; treat that as undecodable.
+    let alpha_plane: &[u16] = bytemuck::try_cast_slice(&raw_data[alpha_start..alpha_end]).ok()?;
 
     // Apply alpha values, honoring the row stride: the first `width` samples of
     // each `y_stride_u16`-wide row are live, the rest is padding.

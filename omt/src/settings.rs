@@ -61,7 +61,9 @@ impl Settings {
     /// ```
     pub fn get_string(name: &str) -> Result<String> {
         let c_name = CString::new(name)?;
-        let mut buffer = vec![0i8; MAX_STRING_LENGTH];
+        // `c_char` is `i8` on x86_64 but `u8` on Linux aarch64/arm; use it so the
+        // buffer element type matches the FFI `*mut c_char` parameter portably.
+        let mut buffer = vec![0 as c_char; MAX_STRING_LENGTH];
 
         let len = unsafe {
             omt_sys::omt_settings_get_string(
@@ -117,8 +119,13 @@ impl Settings {
     /// println!("Port start: {}", port_start);
     /// ```
     pub fn get_integer(name: &str) -> i32 {
-        let c_name = CString::new(name).unwrap_or_default();
-        unsafe { omt_sys::omt_settings_get_integer(c_name.as_ptr()) }
+        // A `name` with an interior NUL cannot be represented as a C string.
+        // Return 0 rather than querying an empty (wrong) key, which is what
+        // `CString::new(name).unwrap_or_default()` would silently have done.
+        match CString::new(name) {
+            Ok(c_name) => unsafe { omt_sys::omt_settings_get_integer(c_name.as_ptr()) },
+            Err(_) => 0,
+        }
     }
 
     /// Sets an integer setting value.

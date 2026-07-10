@@ -3,6 +3,7 @@
 use crate::MAX_STRING_LENGTH;
 use crate::error::{Error, Result};
 use std::fmt;
+use std::os::raw::c_char;
 
 /// Information describing the sender.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -52,9 +53,13 @@ impl SenderInfo {
         Ok(ffi)
     }
 
-    fn c_array_to_string(arr: &[i8; MAX_STRING_LENGTH]) -> Result<String> {
-        // SAFETY: Reinterpreting i8 array as u8 array for UTF-8 validation.
-        // This is safe because i8 and u8 have the same size and alignment.
+    fn c_array_to_string(arr: &[c_char; MAX_STRING_LENGTH]) -> Result<String> {
+        // The element type is `c_char`, which bindgen maps to `i8` on x86_64 but
+        // `u8` on Linux aarch64/arm; using `c_char` here keeps this portable.
+        //
+        // SAFETY: Reinterpreting the `c_char` array as `u8` for UTF-8 validation.
+        // This is safe because `c_char` (i8 or u8) has the same size and
+        // alignment as `u8`.
         let bytes: &[u8] =
             unsafe { std::slice::from_raw_parts(arr.as_ptr() as *const u8, arr.len()) };
 
@@ -68,7 +73,7 @@ impl SenderInfo {
             .map_err(|_| Error::InvalidUtf8)
     }
 
-    fn string_to_c_array(s: &str, arr: &mut [i8; MAX_STRING_LENGTH]) -> Result<()> {
+    fn string_to_c_array(s: &str, arr: &mut [c_char; MAX_STRING_LENGTH]) -> Result<()> {
         let bytes = s.as_bytes();
 
         // We need space for the string plus a null terminator
@@ -81,7 +86,7 @@ impl SenderInfo {
 
         // Copy string bytes into the array
         for (i, &byte) in bytes.iter().enumerate() {
-            arr[i] = byte as i8;
+            arr[i] = byte as c_char;
         }
 
         // Null-terminate the string

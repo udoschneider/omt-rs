@@ -7,6 +7,7 @@ use crate::statistics::Statistics;
 use crate::tally::Tally;
 use crate::types::{Quality, SenderInfo};
 use std::ffi::CString;
+use std::os::raw::c_char;
 use std::ptr::NonNull;
 
 /// Sender for broadcasting media streams to receivers.
@@ -131,7 +132,9 @@ impl Sender {
 
     /// Retrieves the discovery address in the format "HOSTNAME (NAME)".
     pub fn get_address(&self) -> Result<String> {
-        let mut buffer = vec![0i8; MAX_STRING_LENGTH];
+        // `c_char` is `i8` on x86_64 but `u8` on Linux aarch64/arm; use it so the
+        // buffer element type matches the FFI `*mut c_char` parameter portably.
+        let mut buffer = vec![0 as c_char; MAX_STRING_LENGTH];
         let len = unsafe {
             omt_sys::omt_send_getaddress(
                 self.handle.as_ptr() as *mut _,

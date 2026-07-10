@@ -12,11 +12,14 @@ pub fn uyvy_to_rgb8(
     yuv_range: YuvRange,
     yuv_matrix: YuvStandardMatrix,
 ) -> Option<Vec<RGB8>> {
-    let yuy_stride = stride as u32;
+    // Slice off any trailing bytes beyond the declared plane (`height * stride`)
+    // so a larger-than-needed buffer still decodes; the `yuv` packed 4:2:2 path
+    // requires an exact-length plane. (Mirrors UYVA, which slices likewise.)
+    let plane = raw_data.get(..height.checked_mul(stride)?)?;
 
     let packed_image = YuvPackedImage {
-        yuy: raw_data,
-        yuy_stride,
+        yuy: plane,
+        yuy_stride: stride as u32,
         width: width as u32,
         height: height as u32,
     };
@@ -44,8 +47,12 @@ pub fn uyvy_to_rgba8(
     yuv_range: YuvRange,
     yuv_matrix: YuvStandardMatrix,
 ) -> Option<Vec<RGBA8>> {
+    // See `uyvy_to_rgb8`: slice to the declared plane so trailing bytes don't
+    // trip the `yuv` exact-length packed 4:2:2 check.
+    let plane = raw_data.get(..height.checked_mul(stride)?)?;
+
     let packed_image = YuvPackedImage {
-        yuy: raw_data,
+        yuy: plane,
         yuy_stride: stride as u32,
         width: width as u32,
         height: height as u32,

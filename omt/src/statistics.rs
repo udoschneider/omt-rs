@@ -37,13 +37,19 @@ impl Statistics {
     }
 
     /// Returns the codec time as a `Duration`.
+    ///
+    /// A negative `codec_time` (which the C library should never report) is
+    /// clamped to zero rather than wrapping to an enormous `u64` millisecond
+    /// count.
     pub fn codec_duration(&self) -> Duration {
-        Duration::from_millis(self.codec_time as u64)
+        Duration::from_millis(self.codec_time.max(0) as u64)
     }
 
     /// Returns the last codec time as a `Duration`.
+    ///
+    /// A negative value is clamped to zero (see [`codec_duration`](Self::codec_duration)).
     pub fn codec_duration_since_last(&self) -> Duration {
-        Duration::from_millis(self.codec_time_since_last as u64)
+        Duration::from_millis(self.codec_time_since_last.max(0) as u64)
     }
 
     /// Returns the average codec time per frame in milliseconds.

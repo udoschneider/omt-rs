@@ -46,7 +46,7 @@ Three layers, bottom to top:
 
 - **Frame construction** goes through builders in `frame_builder.rs` (`VideoFrameBuilder`, `AudioFrameBuilder`, `MetadataFrameBuilder`), producing an `OwnedMediaFrame` that owns its data.
 
-- **Video conversion (`video_conversion/`)** — one `from_<format>.rs` per source codec, exposed as `MediaFrame::to_rgb8/rgba8/rgb16/rgba16`. Backed by the SIMD-optimized `yuv` crate; **only conversions `yuv` supports natively are implemented — the rest return `None` by design** (see the module doc before adding one). Return types are `RGB8`/`RGBA8`/etc. (from the `rgb` crate), not raw `u8`, to ease iteration. Color matrix/range are auto-selected from frame color space, dimensions (≥1280 → BT.709), and the high-bit-depth flag.
+- **Video conversion (`video_conversion/`)** — one `from_<format>.rs` per source codec, exposed as `MediaFrame::to_rgb8/rgba8/rgb16/rgba16`. Backed by the SIMD-optimized `yuv` crate; **only conversions `yuv` supports natively are implemented — the rest return `None` by design** (see the module doc before adding one). Return types are `RGB8`/`RGBA8`/etc. (from the `rgb` crate), not raw `u8`, to ease iteration. Color matrix is auto-selected from the frame color space, falling back — when the color space is undefined — to the libomt default of height ≥ 720 → BT.709, else BT.601. Range is always limited (OMT has no full-range signaling).
 
 - **`types/`** wraps C enums/flags into Rust types, each with `from_ffi`/`to_ffi` conversions. Flag types use the `bitflags` crate. This `to_ffi`/`from_ffi` boundary is the single conversion point between safe and raw layers.
 

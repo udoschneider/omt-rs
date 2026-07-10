@@ -113,23 +113,50 @@ pub(crate) fn required_input_len(
         return None;
     }
 
+    // Every packed/planar branch first requires `stride` to be at least the
+    // pixel width times the format's per-pixel byte count. `stride` and `width`
+    // are independent attacker-controlled values, and the converters allocate
+    // their output from `width`; without this the gate could accept a frame with
+    // a huge `width` but a tiny `stride` (small validated input) and the
+    // converter would over-allocate its `width`-sized output. Requiring
+    // `stride >= width * bpp` keeps the output bounded by the validated input.
     match codec {
-        // Packed 4:2:2 and packed 32bpp: a single plane of `height` rows.
-        Codec::Uyvy | Codec::Yuy2 | Codec::Bgra => height.checked_mul(stride),
-        // NV12: full-res Y plane + interleaved UV plane of ceil(height/2) rows.
+        // Packed 4:2:2 (2 bpp) and packed 32bpp BGRA (4 bpp): one plane of rows.
+        Codec::Uyvy | Codec::Yuy2 => {
+            if stride < width.checked_mul(2)? {
+                return None;
+            }
+            height.checked_mul(stride)
+        }
+        Codec::Bgra => {
+            if stride < width.checked_mul(4)? {
+                return None;
+            }
+            height.checked_mul(stride)
+        }
+        // NV12: full-res Y plane (1 bpp) + interleaved UV plane of ceil(height/2) rows.
         Codec::Nv12 => {
+            if stride < width {
+                return None;
+            }
             let y = height.checked_mul(stride)?;
             let uv = stride.checked_mul(height.div_ceil(2))?;
             y.checked_add(uv)
         }
-        // YV12: full-res Y plane + two quarter-res chroma planes.
+        // YV12: full-res Y plane (1 bpp) + two quarter-res chroma planes.
         Codec::Yv12 => {
+            if stride < width {
+                return None;
+            }
             let y = height.checked_mul(stride)?;
             let uv = (height / 2).checked_mul(stride / 2)?.checked_mul(2)?;
             y.checked_add(uv)
         }
-        // UYVA: packed UYVY plane followed by a full-res 8-bit alpha plane.
+        // UYVA: packed UYVY plane (2 bpp) followed by a full-res 8-bit alpha plane.
         Codec::Uyva => {
+            if stride < width.checked_mul(2)? {
+                return None;
+            }
             let uyvy = height.checked_mul(stride)?;
             let alpha = width.checked_mul(height)?;
             uyvy.checked_add(alpha)
@@ -143,10 +170,16 @@ pub(crate) fn required_input_len(
 
 /// Byte length required by the P216/PA16 layout (see [`required_input_len`]).
 ///
-/// `width` is unused: P216 is fully strided, so every plane is sized from the
-/// luma row `stride` rather than the pixel width. For conforming OMT frames
-/// `stride == width * 2`, so each plane is `width * height` u16.
-fn p216_input_len(_width: usize, height: usize, stride: usize, alpha: bool) -> Option<usize> {
+/// P216 is fully strided, so every plane is sized from the luma row `stride`
+/// rather than the pixel width. For conforming OMT frames `stride == width * 2`,
+/// so each plane is `width * height` u16. `width` is used only to reject a
+/// `stride` too small for the declared width (16-bit luma needs `stride >=
+/// width * 2` bytes), matching the constraint the packed branches enforce.
+fn p216_input_len(width: usize, height: usize, stride: usize, alpha: bool) -> Option<usize> {
+    // 16-bit luma: each pixel is 2 bytes, so a row needs at least `width * 2`.
+    if stride < width.checked_mul(2)? {
+        return None;
+    }
     // The Y plane, the interleaved UV plane and (for PA16) the alpha plane all
     // use the luma row stride. Counted in 16-bit (u16) elements, then doubled.
     let plane = (stride / 2).checked_mul(height)?;
@@ -193,5 +226,35 @@ mod required_input_len_tests {
     fn compressed_and_audio_codecs_are_rejected() {
         assert_eq!(required_input_len(Codec::Vmx1, 4, 2, 8), None);
         assert_eq!(required_input_len(Codec::Fpa1, 4, 2, 8), None);
+    }
+
+    #[test]
+    fn rejects_stride_smaller_than_width() {
+        // A stride too small for the declared width must be rejected so the
+        // converters' width-sized output allocation stays bounded by the input.
+        // Packed 4:2:2 needs stride >= width * 2.
+        assert_eq!(required_input_len(Codec::Uyvy, 100_000, 1, 4), None);
+        assert_eq!(required_input_len(Codec::Yuy2, 100_000, 1, 4), None);
+        // BGRA needs stride >= width * 4.
+        assert_eq!(required_input_len(Codec::Bgra, 4, 1, 8), None);
+        // NV12/YV12 luma needs stride >= width.
+        assert_eq!(required_input_len(Codec::Nv12, 8, 1, 4), None);
+        assert_eq!(required_input_len(Codec::Yv12, 8, 1, 4), None);
+        // UYVA UYVY portion needs stride >= width * 2.
+        assert_eq!(required_input_len(Codec::Uyva, 8, 1, 4), None);
+        // P216/PA16 16-bit luma needs stride (bytes) >= width * 2.
+        assert_eq!(required_input_len(Codec::P216, 8, 1, 4), None);
+        assert_eq!(required_input_len(Codec::Pa16, 8, 1, 4), None);
+    }
+
+    #[test]
+    fn accepts_exact_dense_stride() {
+        // The dense (stride == width * bpp) boundary must still be accepted.
+        assert_eq!(required_input_len(Codec::Uyvy, 4, 2, 8), Some(16));
+        assert_eq!(required_input_len(Codec::Bgra, 4, 2, 16), Some(32));
+        // P216: Y + UV planes, each width*height u16 -> 2 * 4 * 2 * 2 bytes.
+        assert_eq!(required_input_len(Codec::P216, 4, 2, 8), Some(32));
+        // PA16 adds the alpha plane: 3 * 4 * 2 * 2 bytes.
+        assert_eq!(required_input_len(Codec::Pa16, 4, 2, 8), Some(48));
     }
 }
