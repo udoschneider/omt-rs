@@ -50,12 +50,11 @@ impl Discovery {
             return Vec::new();
         }
 
-        // Guard against unreasonably large counts that might indicate corruption
+        // Guard against unreasonably large counts that might indicate corruption.
+        // A library must not write to stderr on the caller's behalf, so this is
+        // handled silently: an implausible count is treated as "no results"
+        // rather than trusted enough to index into.
         if count > 10000 {
-            eprintln!(
-                "Warning: Discovery returned suspiciously large count: {}",
-                count
-            );
             return Vec::new();
         }
 
