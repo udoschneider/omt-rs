@@ -1,0 +1,21 @@
+# Configuration for `cargo audit` (RUSTSEC advisory scan), consumed by the
+# `audit` CI job. `cargo audit` auto-loads this file from `.cargo/audit.toml`.
+#
+# Only *informational* "unmaintained" advisories are ignored here, and only
+# because they are deep transitive dependencies with no available fix:
+#
+#   - RUSTSEC-2024-0436 (paste 1.0.15): unmaintained. Pulled in transitively via
+#     the `rav1e`/`image` dev-dependency chain; no drop-in replacement we can
+#     select from here.
+#   - RUSTSEC-2026-0105 (core2 0.4.0): unmaintained and yanked, reached only
+#     through the same dev-dependency chain.
+#
+# Both are build/dev-only (examples and image codecs), not in the runtime path
+# of `omt`/`omt-sys`. Actual vulnerabilities and any advisory with an available
+# patched version are deliberately NOT ignored — those must fail the build.
+# Revisit this list when the dev-dependencies update.
+[advisories]
+ignore = [
+    "RUSTSEC-2024-0436", # paste - unmaintained (transitive, no fix)
+    "RUSTSEC-2026-0105", # core2 - unmaintained + yanked (transitive, no fix)
+]

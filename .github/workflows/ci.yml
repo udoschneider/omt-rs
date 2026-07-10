@@ -49,6 +49,12 @@ jobs:
   # Fast tier: supply-chain audit. Scans the committed Cargo.lock for crates
   # with known RUSTSEC advisories. Needs neither libomt.so nor a full build, so
   # it lives alongside the lint job in the lighter tier.
+  #
+  # Runs `cargo audit` directly (rather than the rustsec/audit-check action) so
+  # that `.cargo/audit.toml` is honored deterministically — that file ignores two
+  # informational "unmaintained" advisories in transitive dev-dependencies that
+  # have no available fix. Vulnerabilities and any advisory with a patched
+  # version are NOT ignored and still fail this job.
   # ---------------------------------------------------------------------------
   audit:
     name: Audit (cargo audit)
@@ -56,9 +62,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: rustsec/audit-check@v2
+      - name: Install Rust ${{ env.RUST_TOOLCHAIN }}
+        uses: dtolnay/rust-toolchain@master
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - uses: taiki-e/install-action@cargo-audit
+
+      - name: cargo audit
+        run: cargo audit
 
   # ---------------------------------------------------------------------------
   # Fast tier: cross-compile type-check for aarch64. `c_char` is signed (`i8`) on
