@@ -121,7 +121,7 @@ The OMT C library must be installed on your system before building:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/omt-rs.git
+git clone https://github.com/udoschneider/omt-rs.git
 cd omt-rs
 
 # Build all crates
@@ -347,13 +347,13 @@ Contributions are welcome! Please ensure:
 - [ ] No `unwrap()` in production code
 - [ ] Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)
 
-See [AGENTS.md](AGENTS.md) for detailed development guidelines.
+See [CLAUDE.md](CLAUDE.md) for detailed development guidelines.
 
 ## Version Compatibility
 
 | omt-rs | libomt | Rust |
 |--------|--------|------|
-| 0.1.x  | latest | 1.70+ |
+| 0.1.x  | latest | 1.93+ |
 
 ## Platform Support
 

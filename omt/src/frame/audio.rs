@@ -35,12 +35,21 @@ impl<'a> MediaFrame<'a> {
     /// The returned slices borrow from `self` and cannot outlive this frame.
     pub fn as_f32_planar(&self) -> Option<Vec<&[f32]>> {
         let data = self.data();
-        let samples_per_channel = self.samples_per_channel() as usize;
-        let channels = self.channels() as usize;
-        let samples_per_plane = samples_per_channel * std::mem::size_of::<f32>();
+        let samples_per_channel = self.samples_per_channel();
+        let channels = self.channels();
+
+        // Reject negative counts before casting: a negative `i32` becomes a huge
+        // `usize`, and the size products below must not wrap (mirrors the
+        // overflow-checked gate the video path uses in `required_input_len`).
+        if samples_per_channel < 0 || channels < 0 {
+            return None;
+        }
+        let samples_per_channel = samples_per_channel as usize;
+        let channels = channels as usize;
+        let samples_per_plane = samples_per_channel.checked_mul(std::mem::size_of::<f32>())?;
 
         // Validate total data size
-        let expected_size = channels * samples_per_plane;
+        let expected_size = channels.checked_mul(samples_per_plane)?;
         if data.len() != expected_size {
             return None;
         }

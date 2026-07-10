@@ -132,6 +132,48 @@ mod tests {
     }
 
     #[test]
+    fn test_uyvy_known_values_bt601_limited() {
+        // Known-value checks: unlike the gray tests (which only assert R≈G≈B),
+        // these pin actual decoded colors so a converter returning a
+        // plausible-but-wrong result (e.g. all-black, or swapped chroma) fails.
+        let (black_y, white_y) = yuv_utils::black_white_y(Limited);
+        let (nu, nv) = yuv_utils::neutral_uv();
+
+        // One UYVY macropixel (U, Y0, V, Y1) = two pixels, single row.
+        let macropixel = |u: u8, y: u8, v: u8| vec![u, y, v, y];
+
+        // Black: Y=16, neutral chroma -> RGB ~ (0, 0, 0).
+        let rgb = uyvy_to_rgb8(&macropixel(nu, black_y, nv), 2, 1, 4, Limited, Bt601).unwrap();
+        for px in &rgb {
+            assert!(
+                px.r <= 4 && px.g <= 4 && px.b <= 4,
+                "black should decode near (0,0,0), got {px:?}"
+            );
+        }
+
+        // White: Y=235, neutral chroma -> RGB ~ (255, 255, 255).
+        let rgb = uyvy_to_rgb8(&macropixel(nu, white_y, nv), 2, 1, 4, Limited, Bt601).unwrap();
+        for px in &rgb {
+            assert!(
+                px.r >= 251 && px.g >= 251 && px.b >= 251,
+                "white should decode near (255,255,255), got {px:?}"
+            );
+        }
+
+        // Red: red-biased chroma -> R clearly dominant over G and B. This proves
+        // the U/V channels are applied with the correct sign and ordering.
+        let (ru, rv) = yuv_utils::color_bar_uv(2);
+        let ry = yuv_utils::color_bar_y(2, Limited);
+        let rgb = uyvy_to_rgb8(&macropixel(ru, ry, rv), 2, 1, 4, Limited, Bt601).unwrap();
+        for px in &rgb {
+            assert!(
+                px.r > 150 && px.r > px.g + 60 && px.r > px.b + 60,
+                "red should decode R-dominant, got {px:?}"
+            );
+        }
+    }
+
+    #[test]
     fn test_uyvy_to_rgb8_bt601_limited() {
         let width = 8;
         let height = 8;

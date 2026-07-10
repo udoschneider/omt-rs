@@ -139,7 +139,7 @@ impl VideoFrameBuilder {
         self
     }
 
-    /// Sets per-frame metadata (UTF-8 string, max 65536 bytes).
+    /// Sets per-frame metadata (UTF-8 string, max 65535 bytes).
     pub fn frame_metadata(mut self, metadata: String) -> Self {
         self.frame_metadata = Some(metadata);
         self
@@ -153,7 +153,7 @@ impl VideoFrameBuilder {
     /// - No codec is specified
     /// - Width or height is zero
     /// - Data is empty
-    /// - Frame metadata exceeds 65536 bytes
+    /// - Frame metadata exceeds 65535 bytes
     pub fn build(self) -> Result<OwnedMediaFrame> {
         let codec = self.codec.ok_or(Error::InvalidParameter {
             parameter: "codec".to_string(),
@@ -184,9 +184,12 @@ impl VideoFrameBuilder {
 
         let frame_metadata_cstring = if let Some(ref metadata) = self.frame_metadata {
             if metadata.len() > 65535 {
-                return Err(Error::BufferTooSmall {
-                    required: metadata.len(),
-                    provided: 65536,
+                return Err(Error::InvalidParameter {
+                    parameter: "frame_metadata".to_string(),
+                    reason: format!(
+                        "length {} exceeds the maximum of 65535 bytes",
+                        metadata.len()
+                    ),
                 });
             }
             Some(CString::new(metadata.as_str())?)
@@ -301,7 +304,7 @@ impl AudioFrameBuilder {
         self
     }
 
-    /// Sets per-frame metadata (UTF-8 string, max 65536 bytes).
+    /// Sets per-frame metadata (UTF-8 string, max 65535 bytes).
     pub fn frame_metadata(mut self, metadata: String) -> Self {
         self.frame_metadata = Some(metadata);
         self
@@ -316,7 +319,7 @@ impl AudioFrameBuilder {
     /// - Channels is zero or exceeds 32
     /// - Samples per channel is zero
     /// - Data is empty or size doesn't match samples_per_channel * channels * 4
-    /// - Frame metadata exceeds 65536 bytes
+    /// - Frame metadata exceeds 65535 bytes
     pub fn build(self) -> Result<OwnedMediaFrame> {
         if self.sample_rate <= 0 {
             return Err(Error::InvalidParameter {
@@ -365,9 +368,12 @@ impl AudioFrameBuilder {
 
         let frame_metadata_cstring = if let Some(ref metadata) = self.frame_metadata {
             if metadata.len() > 65535 {
-                return Err(Error::BufferTooSmall {
-                    required: metadata.len(),
-                    provided: 65536,
+                return Err(Error::InvalidParameter {
+                    parameter: "frame_metadata".to_string(),
+                    reason: format!(
+                        "length {} exceeds the maximum of 65535 bytes",
+                        metadata.len()
+                    ),
                 });
             }
             Some(CString::new(metadata.as_str())?)
@@ -517,7 +523,22 @@ impl OwnedMediaFrame {
     /// frame must remain valid while the borrowed frame is in use.
     ///
     /// The lifetime of the returned `MediaFrame` is tied to `&self`, ensuring
-    /// it cannot outlive this `OwnedMediaFrame`.
+    /// it cannot outlive this `OwnedMediaFrame`. The following use-after-free is
+    /// rejected at compile time:
+    ///
+    /// ```compile_fail
+    /// use omt::{VideoFrameBuilder, Codec};
+    /// let media_frame = {
+    ///     let owned = VideoFrameBuilder::new()
+    ///         .codec(Codec::Uyvy)
+    ///         .dimensions(16, 16)
+    ///         .data(vec![0u8; 16 * 16 * 2])
+    ///         .build()
+    ///         .unwrap();
+    ///     owned.as_media_frame() // borrows `owned`
+    /// }; // `owned` dropped here
+    /// let _ = media_frame.data(); // ERROR: `owned` does not live long enough
+    /// ```
     pub fn as_media_frame(&self) -> MediaFrame<'_> {
         let mut ffi = omt_sys::OMTMediaFrame {
             Type: self.frame_type.to_ffi(),

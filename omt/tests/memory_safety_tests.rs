@@ -6,81 +6,13 @@
 
 use omt::{AudioFrameBuilder, Codec, FrameType, MetadataFrameBuilder, VideoFrameBuilder};
 
-/// Test that MediaFrame cannot outlive the Receiver
-///
-/// This is a compile-time test. If uncommented, it should fail to compile
-/// with an error about the frame outliving the receiver.
-#[test]
-#[ignore] // This is a compile-fail test, keep it as documentation
-fn test_frame_cannot_outlive_receiver() {
-    // This code should NOT compile if uncommented:
-    /*
-    let frame = {
-        let receiver = Receiver::new(
-            "omt://localhost:6400",
-            FrameType::VIDEO,
-            PreferredVideoFormat::Uyvy,
-            ReceiveFlags::NONE,
-        ).unwrap();
-
-        receiver.receive(FrameType::VIDEO, 100).unwrap()
-    }; // receiver dropped here
-
-    // frame is now invalid but would be usable without lifetime constraints
-    if let Some(f) = frame {
-        let _ = f.data(); // This would be use-after-free!
-    }
-    */
-}
-
-/// Test that MediaFrame from OwnedMediaFrame cannot outlive the owned frame
-///
-/// This is a compile-time test demonstrating the lifetime fix.
-#[test]
-#[ignore] // This is a compile-fail test, keep it as documentation
-fn test_media_frame_cannot_outlive_owned_frame() {
-    // This code should NOT compile if uncommented:
-    /*
-    let media_frame = {
-        let owned_frame = VideoFrameBuilder::new()
-            .codec(Codec::Uyvy)
-            .dimensions(1920, 1080)
-            .data(vec![0u8; 1920 * 1080 * 2])
-            .build()
-            .unwrap();
-
-        owned_frame.as_media_frame() // Borrows from owned_frame
-    }; // owned_frame dropped here
-
-    // media_frame now has dangling pointers!
-    let _ = media_frame.data(); // This would be use-after-free!
-    */
-}
-
-/// Test that data slices cannot outlive the MediaFrame
-///
-/// This is a compile-time test.
-#[test]
-#[ignore] // This is a compile-fail test, keep it as documentation
-fn test_data_slice_cannot_outlive_frame() {
-    // This code should NOT compile if uncommented:
-    /*
-    let data: &[u8] = {
-        let owned_frame = VideoFrameBuilder::new()
-            .codec(Codec::Uyvy)
-            .dimensions(1920, 1080)
-            .data(vec![0u8; 1920 * 1080 * 2])
-            .build()
-            .unwrap();
-
-        let media_frame = owned_frame.as_media_frame();
-        media_frame.data() // Returns &'a [u8] tied to media_frame
-    }; // media_frame dropped here
-
-    // data is now a dangling pointer!
-    let _ = data[0]; // This would be use-after-free!
-    */
-}
+// The compile-time lifetime guarantees (a `MediaFrame` or its `data()` slice
+// cannot outlive the frame/owner it borrows from) are enforced by *live*
+// `compile_fail` doctests, so they actually run under `cargo test` and would
+// break if the lifetime bounds were removed:
+//   - `MediaFrame::data()`               — slice cannot outlive the frame
+//   - `OwnedMediaFrame::as_media_frame()` — frame cannot outlive its owner
+// The runtime tests below exercise the *correct* usage patterns.
 
 /// Test correct usage: OwnedMediaFrame and MediaFrame lifetimes are correct
 #[test]
@@ -315,7 +247,7 @@ fn test_metadata_null_termination() {
 /// Test frame metadata that's too large
 #[test]
 fn test_oversized_frame_metadata() {
-    let huge_metadata = "x".repeat(70000); // Larger than 65536 byte limit
+    let huge_metadata = "x".repeat(70000); // Larger than the 65535 byte limit
 
     let width = 1920;
     let height = 1080;
@@ -328,7 +260,7 @@ fn test_oversized_frame_metadata() {
 
     assert!(
         result.is_err(),
-        "Should reject metadata larger than 65536 bytes"
+        "Should reject metadata larger than 65535 bytes"
     );
 }
 
@@ -515,63 +447,4 @@ fn test_explicit_stride() {
 
     let media_frame = owned_frame.as_media_frame();
     assert_eq!(media_frame.stride(), stride);
-}
-
-/// These examples demonstrate code patterns that SHOULD NOT compile.
-/// They are kept as comments for documentation purposes.
-#[cfg(test)]
-mod compile_fail_examples {
-    /*
-    Example 1: Frame outliving receiver
-
-    ```compile_fail
-    use omt::{Receiver, FrameType, PreferredVideoFormat, ReceiveFlags};
-
-    let frame = {
-        let receiver = Receiver::new(
-            "omt://localhost:6400",
-            FrameType::VIDEO,
-            PreferredVideoFormat::Uyvy,
-            ReceiveFlags::NONE,
-        ).unwrap();
-        receiver.receive(FrameType::VIDEO, 100).unwrap()
-    };
-    // Error: `receiver` does not live long enough
-    ```
-
-    Example 2: MediaFrame outliving OwnedMediaFrame
-
-    ```compile_fail
-    use omt::{VideoFrameBuilder, Codec};
-
-    let media_frame = {
-        let owned = VideoFrameBuilder::new()
-            .codec(Codec::Uyvy)
-            .dimensions(1920, 1080)
-            .data(vec![0u8; 1920 * 1080 * 2])
-            .build()
-            .unwrap();
-        owned.as_media_frame()
-    };
-    // Error: `owned` does not live long enough
-    ```
-
-    Example 3: Data slice outliving frame
-
-    ```compile_fail
-    use omt::{VideoFrameBuilder, Codec};
-
-    let data = {
-        let owned = VideoFrameBuilder::new()
-            .codec(Codec::Uyvy)
-            .dimensions(1920, 1080)
-            .data(vec![0u8; 1920 * 1080 * 2])
-            .build()
-            .unwrap();
-        let frame = owned.as_media_frame();
-        frame.data()
-    };
-    // Error: borrowed data escapes outside of its scope
-    ```
-    */
 }

@@ -46,6 +46,21 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   # ---------------------------------------------------------------------------
+  # Fast tier: supply-chain audit. Scans the committed Cargo.lock for crates
+  # with known RUSTSEC advisories. Needs neither libomt.so nor a full build, so
+  # it lives alongside the lint job in the lighter tier.
+  # ---------------------------------------------------------------------------
+  audit:
+    name: Audit (cargo audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------------------
   # Full tier: build the native libomt from the upstream .NET sources, install
   # it, then run the real test suite (unit + integration + doctests), build the
   # examples, and check the docs. This is what verifies the memory-safety

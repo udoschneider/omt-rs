@@ -2,6 +2,7 @@
 name = "omt"
 version = "0.1.0"
 description = "Safe, idiomatic Rust bindings for Open Media Transport (OMT)"
+documentation = "https://docs.rs/omt"
 readme = "README.md"
 keywords = ["omt", "video", "audio", "multimedia", "streaming"]
 categories = ["multimedia::video", "multimedia::audio", "api-bindings"]

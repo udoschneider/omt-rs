@@ -2,6 +2,7 @@
 name = "omt-sys"
 version = "0.1.0"
 description = "Raw FFI bindings to the Open Media Transport (OMT) C library (libomt)"
+documentation = "https://docs.rs/omt-sys"
 readme = "README.md"
 keywords = ["omt", "ffi", "bindings", "video", "libomt"]
 categories = ["external-ffi-bindings", "multimedia"]

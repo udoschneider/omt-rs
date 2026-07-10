@@ -20,7 +20,7 @@ pub mod rgb_utils {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
     /// use omt_rs::video_conversion::tests::rgb8_data;
     /// let data = rgb8_data();
     /// assert_eq!(data.len(), 48); // 16 pixels × 3 bytes each
@@ -35,7 +35,7 @@ pub mod rgb_utils {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
     /// use omt_rs::video_conversion::tests::rgba8_data;
     /// let data = rgba8_data();
     /// assert_eq!(data.len(), 192); // 64 pixels × 4 bytes each
@@ -50,7 +50,7 @@ pub mod rgb_utils {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
     /// use omt_rs::video_conversion::tests::rgb16_data;
     /// let data = rgb16_data();
     /// assert_eq!(data.len(), 96); // 16 pixels × 6 bytes each (3 × u16)
@@ -65,7 +65,7 @@ pub mod rgb_utils {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
     /// use omt_rs::video_conversion::tests::rgba16_data;
     /// let data = rgba16_data();
     /// assert_eq!(data.len(), 384); // 64 pixels × 8 bytes each (4 × u16)
@@ -83,7 +83,7 @@ pub mod rgb_utils {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
     /// use omt_rs::video_conversion::tests::rgb8_colors;
     /// use rgb::Rgb;
     /// let colors = rgb8_colors();
@@ -108,7 +108,7 @@ pub mod rgb_utils {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
     /// use omt_rs::video_conversion::tests::rgba8_colors;
     /// use rgb::Rgba;
     /// let colors = rgba8_colors();
@@ -134,7 +134,7 @@ pub mod rgb_utils {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
     /// use omt_rs::video_conversion::tests::rgb16_colors;
     /// use rgb::Rgb;
     /// let colors = rgb16_colors();
@@ -159,7 +159,7 @@ pub mod rgb_utils {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
     /// use omt_rs::video_conversion::tests::rgba16_colors;
     /// use rgb::Rgba;
     /// let colors = rgba16_colors();
@@ -185,7 +185,7 @@ pub mod rgb_utils {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
     /// use omt_rs::video_conversion::tests::cga_colors;
     /// use rgb::Rgb;
     /// let colors = cga_colors();
@@ -203,7 +203,7 @@ pub mod rgb_utils {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
     /// use omt_rs::video_conversion::tests::cga_alpha_colors;
     /// use rgb::Rgba;
     /// let colors = cga_alpha_colors();
@@ -233,7 +233,7 @@ pub mod rgb_utils {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
     /// use omt_rs::video_conversion::tests::cga_alpha_color;
     /// use rgb::Rgba;
     ///

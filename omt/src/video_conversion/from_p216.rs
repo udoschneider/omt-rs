@@ -9,11 +9,19 @@
 use rgb::*;
 use yuv::{YuvPlanarImage, YuvRange, YuvStandardMatrix};
 
-/// De-interleave a 16-bit UV plane into separate U and V planes.
+/// De-interleave a 16-bit UV plane into separate tightly-packed U and V planes.
 ///
-/// P216 stores UV data as interleaved pairs: U0, V0, U1, V1, ...
-/// This function splits them into separate U and V planes for use with planar YUV functions.
-fn deinterleave_uv_plane(uv_plane: &[u16], width: usize, height: usize) -> (Vec<u16>, Vec<u16>) {
+/// P216 stores UV data as interleaved pairs `U0, V0, U1, V1, …`. The plane is
+/// fully strided: each row starts every `row_pitch_u16` u16 elements (the same
+/// stride as the luma plane), of which the first `ceil(width/2)` pairs are live
+/// chroma and the remainder is padding. This splits the live pairs into
+/// separate, tightly-packed U and V planes for the planar YUV functions.
+fn deinterleave_uv_plane(
+    uv_plane: &[u16],
+    width: usize,
+    height: usize,
+    row_pitch_u16: usize,
+) -> (Vec<u16>, Vec<u16>) {
     // For 4:2:2, UV width is half of Y width
     let uv_width = width.div_ceil(2);
     let uv_count = uv_width * height;
@@ -21,9 +29,9 @@ fn deinterleave_uv_plane(uv_plane: &[u16], width: usize, height: usize) -> (Vec<
     let mut u_plane = Vec::with_capacity(uv_count);
     let mut v_plane = Vec::with_capacity(uv_count);
 
-    // UV plane is interleaved: U0, V0, U1, V1, ...
+    // UV plane is interleaved: U0, V0, U1, V1, ..., padded to `row_pitch_u16`.
     for row in 0..height {
-        let row_start = row * uv_width * 2;
+        let row_start = row * row_pitch_u16;
         for i in 0..uv_width {
             let idx = row_start + i * 2;
             if idx + 1 < uv_plane.len() {
@@ -68,9 +76,10 @@ pub fn p216_to_rgb16(
     // Y plane size in u16 elements
     let y_plane_size = y_stride_u16 * height;
 
-    // UV plane: half width, full height, interleaved (so width UV pairs per row)
+    // UV plane: 4:2:2 interleaved, full height, sharing the luma row stride
+    // (P216 is fully strided), so its size equals the Y plane's.
     let uv_width = width.div_ceil(2);
-    let uv_plane_size = uv_width * 2 * height; // *2 for interleaved U and V
+    let uv_plane_size = y_stride_u16 * height;
 
     // Total size needed in u16 elements
     let total_u16_elements = y_plane_size + uv_plane_size;
@@ -89,8 +98,8 @@ pub fn p216_to_rgb16(
     // Extract interleaved UV plane
     let uv_plane = &data_u16[y_plane_size..y_plane_size + uv_plane_size];
 
-    // De-interleave UV into separate U and V planes
-    let (u_plane, v_plane) = deinterleave_uv_plane(uv_plane, width, height);
+    // De-interleave UV into separate U and V planes, honoring the luma stride.
+    let (u_plane, v_plane) = deinterleave_uv_plane(uv_plane, width, height, y_stride_u16);
 
     // Create planar image for yuv crate
     let planar_image = YuvPlanarImage {
@@ -161,9 +170,10 @@ pub fn p216_to_rgba16(
     // Y plane size in u16 elements
     let y_plane_size = y_stride_u16 * height;
 
-    // UV plane: half width, full height, interleaved (so width UV pairs per row)
+    // UV plane: 4:2:2 interleaved, full height, sharing the luma row stride
+    // (P216 is fully strided), so its size equals the Y plane's.
     let uv_width = width.div_ceil(2);
-    let uv_plane_size = uv_width * 2 * height; // *2 for interleaved U and V
+    let uv_plane_size = y_stride_u16 * height;
 
     // Total size needed in u16 elements
     let total_u16_elements = y_plane_size + uv_plane_size;
@@ -182,8 +192,8 @@ pub fn p216_to_rgba16(
     // Extract interleaved UV plane
     let uv_plane = &data_u16[y_plane_size..y_plane_size + uv_plane_size];
 
-    // De-interleave UV into separate U and V planes
-    let (u_plane, v_plane) = deinterleave_uv_plane(uv_plane, width, height);
+    // De-interleave UV into separate U and V planes, honoring the luma stride.
+    let (u_plane, v_plane) = deinterleave_uv_plane(uv_plane, width, height, y_stride_u16);
 
     // Create planar image for yuv crate
     let planar_image = YuvPlanarImage {
@@ -246,21 +256,14 @@ pub fn pa16_to_rgb16(
     yuv_range: YuvRange,
     yuv_matrix: YuvStandardMatrix,
 ) -> Option<Vec<RGB16>> {
-    // Stride is in bytes, but we're working with u16 values (2 bytes each)
+    // Stride is in bytes, but we're working with u16 values (2 bytes each).
+    // P216/PA16 is fully strided: Y, interleaved UV, and alpha planes each use
+    // the luma row stride, so all three planes are the same size.
     let y_stride_u16 = stride / 2;
+    let plane_size = y_stride_u16 * height;
 
-    // Y plane size in u16 elements
-    let y_plane_size = y_stride_u16 * height;
-
-    // UV plane: half width, full height, interleaved
-    let uv_width = width.div_ceil(2);
-    let uv_plane_size = uv_width * 2 * height;
-
-    // Alpha plane size (same as Y plane dimensions)
-    let alpha_plane_size = width * height;
-
-    // Total size needed in u16 elements (P216 portion + alpha)
-    let total_u16_elements = y_plane_size + uv_plane_size + alpha_plane_size;
+    // Total size needed in u16 elements (Y + UV + alpha)
+    let total_u16_elements = plane_size * 3;
 
     // Validate data size
     if raw_data.len() < total_u16_elements * 2 {
@@ -296,21 +299,14 @@ pub fn pa16_to_rgba16(
     yuv_range: YuvRange,
     yuv_matrix: YuvStandardMatrix,
 ) -> Option<Vec<RGBA16>> {
-    // Stride is in bytes, but we're working with u16 values (2 bytes each)
+    // Stride is in bytes, but we're working with u16 values (2 bytes each).
+    // P216/PA16 is fully strided: Y, interleaved UV, and alpha planes each use
+    // the luma row stride, so all three planes are the same size.
     let y_stride_u16 = stride / 2;
+    let plane_size = y_stride_u16 * height;
 
-    // Y plane size in u16 elements
-    let y_plane_size = y_stride_u16 * height;
-
-    // UV plane: half width, full height, interleaved
-    let uv_width = width.div_ceil(2);
-    let uv_plane_size = uv_width * 2 * height;
-
-    // Alpha plane size (same as Y plane dimensions, but using width not stride)
-    let alpha_plane_size = width * height;
-
-    // Total size needed in u16 elements (P216 portion + alpha)
-    let total_u16_elements = y_plane_size + uv_plane_size + alpha_plane_size;
+    // Total size needed in u16 elements (Y + UV + alpha)
+    let total_u16_elements = plane_size * 3;
 
     // Validate data size
     if raw_data.len() < total_u16_elements * 2 {
@@ -320,16 +316,24 @@ pub fn pa16_to_rgba16(
     // First convert P216 portion to RGBA16 (alpha will be set to 65535)
     let mut rgba_data = p216_to_rgba16(raw_data, width, height, stride, yuv_range, yuv_matrix)?;
 
-    // Extract alpha plane from raw data
-    let p216_size = y_plane_size + uv_plane_size;
-    let alpha_start = p216_size * 2; // Convert to byte offset
-    let alpha_end = alpha_start + alpha_plane_size * 2;
-
+    // Extract the strided alpha plane (follows the Y + UV planes).
+    let alpha_start = plane_size * 2 * 2; // (Y + UV) planes, u16 -> byte offset
+    let alpha_end = alpha_start + plane_size * 2;
     let alpha_plane: &[u16] = bytemuck::cast_slice(&raw_data[alpha_start..alpha_end]);
 
-    // Apply alpha values from the alpha plane
-    for (pixel, &alpha) in rgba_data.iter_mut().zip(alpha_plane.iter()) {
-        pixel.a = alpha;
+    // Apply alpha values, honoring the row stride: the first `width` samples of
+    // each `y_stride_u16`-wide row are live, the rest is padding.
+    for row in 0..height {
+        let alpha_row = row * y_stride_u16;
+        let pixel_row = row * width;
+        for col in 0..width {
+            if let (Some(&alpha), Some(pixel)) = (
+                alpha_plane.get(alpha_row + col),
+                rgba_data.get_mut(pixel_row + col),
+            ) {
+                pixel.a = alpha;
+            }
+        }
     }
 
     Some(rgba_data)
@@ -638,11 +642,30 @@ mod tests {
     #[test]
     fn test_deinterleave_uv_plane() {
         // Create test UV data: U0, V0, U1, V1, U2, V2, U3, V3
+        // width=8 -> 4 UV pairs per row; row pitch of 8 u16 means the row is
+        // densely packed (no padding).
         let uv_data: Vec<u16> = vec![100, 200, 101, 201, 102, 202, 103, 203];
 
-        let (u_plane, v_plane) = deinterleave_uv_plane(&uv_data, 8, 1);
+        let (u_plane, v_plane) = deinterleave_uv_plane(&uv_data, 8, 1, 8);
 
         assert_eq!(u_plane, vec![100, 101, 102, 103]);
         assert_eq!(v_plane, vec![200, 201, 202, 203]);
+    }
+
+    #[test]
+    fn test_deinterleave_uv_plane_padded_stride() {
+        // width=4 -> 2 live UV pairs per row. A row pitch of 6 u16 leaves 2 u16
+        // of padding at the end of each row. Two rows. This is the case the
+        // width-based reader used to corrupt: every row after the first must be
+        // read from its strided offset, not densely packed.
+        let uv_data: Vec<u16> = vec![
+            10, 20, 11, 21, 0, 0, // row 0: U0 V0 U1 V1 pad pad
+            12, 22, 13, 23, 0, 0, // row 1
+        ];
+
+        let (u_plane, v_plane) = deinterleave_uv_plane(&uv_data, 4, 2, 6);
+
+        assert_eq!(u_plane, vec![10, 11, 12, 13]);
+        assert_eq!(v_plane, vec![20, 21, 22, 23]);
     }
 }

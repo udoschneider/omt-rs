@@ -75,7 +75,10 @@ impl Settings {
             return Ok(String::new());
         }
 
-        let bytes: Vec<u8> = buffer[..len as usize].iter().map(|&b| b as u8).collect();
+        // Clamp to the buffer we handed the C call: a contract-violating length
+        // larger than `MAX_STRING_LENGTH` must not panic the slice (no-panics rule).
+        let len = (len as usize).min(buffer.len());
+        let bytes: Vec<u8> = buffer[..len].iter().map(|&b| b as u8).collect();
 
         String::from_utf8(bytes).map_err(|_| Error::InvalidUtf8)
     }

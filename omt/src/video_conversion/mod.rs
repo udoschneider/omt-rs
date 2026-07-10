@@ -33,7 +33,7 @@
 //! **If you add another caller, it MUST run the same `required_input_len` check
 //! first.** Do not call a converter directly on frame-supplied dimensions.
 use crate::MediaFrame;
-use crate::types::{Codec, ColorSpace, VideoFlags};
+use crate::types::{Codec, ColorSpace};
 use yuv::{YuvRange, YuvStandardMatrix};
 
 pub(crate) use from_bgra::*;
@@ -57,15 +57,18 @@ mod test_utils;
 
 /// Determines the appropriate YUV standard matrix for a video frame.
 ///
-/// Returns the YUV standard matrix based on the frame's color space:
-/// - `Bt709` for BT.709 color space or frames with width >= 1280 (HD and above)
-/// - `Bt601` for BT.601 color space or frames with width < 1280 (SD)
+/// When the frame carries an explicit color space, it is honored. For
+/// `Undefined`/absent color space we mirror the OMT codec's own default,
+/// documented in `libomt.h`: *"BT601 for heights < 720, BT709 for everything
+/// else"* — i.e. the selection is **height**-based, not width-based. Matching
+/// the library keeps the Rust-side RGB conversion in agreement with the matrix
+/// the sender encoded with.
 pub(crate) fn get_yuv_matrix(frame: &MediaFrame<'_>) -> YuvStandardMatrix {
     match frame.color_space() {
         Some(ColorSpace::Bt709) => YuvStandardMatrix::Bt709,
         Some(ColorSpace::Bt601) => YuvStandardMatrix::Bt601,
         Some(ColorSpace::Undefined) | None => {
-            if frame.width() >= 1280 {
+            if frame.height() >= 720 {
                 YuvStandardMatrix::Bt709
             } else {
                 YuvStandardMatrix::Bt601
@@ -76,14 +79,15 @@ pub(crate) fn get_yuv_matrix(frame: &MediaFrame<'_>) -> YuvStandardMatrix {
 
 /// Determines the appropriate YUV range for a video frame.
 ///
-/// Returns `Full` range if the frame has high bit depth flag set,
-/// otherwise returns `Limited` range.
-pub(crate) fn get_yuv_range(frame: &MediaFrame<'_>) -> YuvRange {
-    if frame.flags().contains(VideoFlags::HIGH_BIT_DEPTH) {
-        YuvRange::Full
-    } else {
-        YuvRange::Limited
-    }
+/// OMT transports studio/limited-range YUV for every pixel format and has **no**
+/// full-range signaling in its ABI (`libomt.h` exposes only a color-space enum,
+/// no range flag). In particular the `HIGH_BIT_DEPTH` flag denotes P216/PA16
+/// encoding — a bit-depth property that is orthogonal to range and must not be
+/// used to infer it. We therefore always decode as [`YuvRange::Limited`]; the
+/// argument is kept for symmetry with [`get_yuv_matrix`] and to localize the
+/// assumption should OMT ever gain range signaling.
+pub(crate) fn get_yuv_range(_frame: &MediaFrame<'_>) -> YuvRange {
+    YuvRange::Limited
 }
 
 /// Minimum number of input bytes required to decode a video frame of `codec`
@@ -138,14 +142,18 @@ pub(crate) fn required_input_len(
 }
 
 /// Byte length required by the P216/PA16 layout (see [`required_input_len`]).
-fn p216_input_len(width: usize, height: usize, stride: usize, alpha: bool) -> Option<usize> {
-    // Everything below is counted in 16-bit (u16) elements, then doubled.
-    let y = (stride / 2).checked_mul(height)?;
-    // Interleaved UV: ceil(width/2) pairs per row, two u16 per pair, `height` rows.
-    let uv = width.div_ceil(2).checked_mul(2)?.checked_mul(height)?;
-    let mut elements = y.checked_add(uv)?;
+///
+/// `width` is unused: P216 is fully strided, so every plane is sized from the
+/// luma row `stride` rather than the pixel width. For conforming OMT frames
+/// `stride == width * 2`, so each plane is `width * height` u16.
+fn p216_input_len(_width: usize, height: usize, stride: usize, alpha: bool) -> Option<usize> {
+    // The Y plane, the interleaved UV plane and (for PA16) the alpha plane all
+    // use the luma row stride. Counted in 16-bit (u16) elements, then doubled.
+    let plane = (stride / 2).checked_mul(height)?;
+    // Y plane + interleaved UV plane, both at the luma stride.
+    let mut elements = plane.checked_mul(2)?;
     if alpha {
-        elements = elements.checked_add(width.checked_mul(height)?)?;
+        elements = elements.checked_add(plane)?;
     }
     elements.checked_mul(2)
 }
