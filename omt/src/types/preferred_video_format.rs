@@ -27,6 +27,7 @@ pub enum PreferredVideoFormat {
 
 impl PreferredVideoFormat {
     /// Creates from FFI value.
+    #[allow(dead_code)] // Inverse of `to_ffi`; kept for API symmetry.
     pub(crate) fn from_ffi(value: u32) -> Option<Self> {
         match value {
             omt_sys::OMTPreferredVideoFormat_UYVY => Some(Self::Uyvy),

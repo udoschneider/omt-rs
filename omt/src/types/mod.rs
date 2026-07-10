@@ -2,16 +2,18 @@
 
 mod codec;
 mod color_space;
-mod flags;
-mod format;
 mod frame_type;
+mod preferred_video_format;
 mod quality;
+mod receive_flags;
 mod sender_info;
+mod video_flags;
 
 pub use codec::Codec;
 pub use color_space::ColorSpace;
-pub use flags::{ReceiveFlags, VideoFlags};
-pub use format::PreferredVideoFormat;
 pub use frame_type::FrameType;
+pub use preferred_video_format::PreferredVideoFormat;
 pub use quality::Quality;
+pub use receive_flags::ReceiveFlags;
 pub use sender_info::SenderInfo;
+pub use video_flags::VideoFlags;
