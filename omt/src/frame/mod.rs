@@ -37,8 +37,26 @@ use std::slice;
 pub struct MediaFrame<'a> {
     ffi: omt_sys::OMTMediaFrame,
     _marker: PhantomData<&'a ()>,
-    // Tracks whether this frame owns its data (true for cloned frames)
-    owns_data: bool,
+    // `Some` for cloned (deep-copied) frames that own their buffers, `None` for
+    // frames borrowing C-owned or `OwnedMediaFrame`-owned memory. When `Some`,
+    // the pointers in `ffi` alias into these boxes, which free themselves on
+    // drop — so no manual `Drop` impl is required. Held solely for that drop
+    // side-effect (the pointers are read through `ffi`, not this field), hence
+    // `dead_code` is allowed.
+    #[allow(dead_code)]
+    owned: Option<OwnedBuffers>,
+}
+
+/// Heap buffers owned by a cloned [`MediaFrame`].
+///
+/// A cloned frame's `OMTMediaFrame` pointers alias into these boxes; dropping
+/// this struct releases them through ordinary Rust ownership, which is why
+/// `MediaFrame` needs no hand-written `Drop`.
+#[derive(Debug, Default)]
+struct OwnedBuffers {
+    data: Option<Box<[u8]>>,
+    compressed: Option<Box<[u8]>>,
+    metadata: Option<Box<[u8]>>,
 }
 
 // Common methods available for all frame types
@@ -54,10 +72,37 @@ impl<'a> MediaFrame<'a> {
         if ptr.is_null() {
             None
         } else {
+            let ffi = unsafe { *ptr };
+
+            // Canary for assumption #1 in the crate-level "Safety assumptions
+            // about the `libomt` C library" docs: a positive length must be
+            // paired with a non-null pointer. `data()`, `compressed_data()` and
+            // `frame_metadata()` already guard against `null`/`len <= 0` (so
+            // release builds stay sound regardless), but a frame that reports
+            // `len > 0` with a null base would mean libomt broke its buffer
+            // contract. These are `debug_assert!`s: zero cost in release, but
+            // they trip the test suite (in CI) if a future libomt version
+            // regresses, surfacing it as a failed test rather than latent UB.
+            debug_assert!(
+                !(ffi.DataLength > 0 && ffi.Data.is_null()),
+                "libomt returned Data=null with DataLength={} (broken frame-buffer contract)",
+                ffi.DataLength,
+            );
+            debug_assert!(
+                !(ffi.CompressedLength > 0 && ffi.CompressedData.is_null()),
+                "libomt returned CompressedData=null with CompressedLength={}",
+                ffi.CompressedLength,
+            );
+            debug_assert!(
+                !(ffi.FrameMetadataLength > 0 && ffi.FrameMetadata.is_null()),
+                "libomt returned FrameMetadata=null with FrameMetadataLength={}",
+                ffi.FrameMetadataLength,
+            );
+
             Some(Self {
-                ffi: unsafe { *ptr },
+                ffi,
                 _marker: PhantomData,
-                owns_data: false, // Borrowed from C library
+                owned: None, // Borrowed from C library
             })
         }
     }
@@ -74,7 +119,7 @@ impl<'a> MediaFrame<'a> {
         Self {
             ffi,
             _marker: PhantomData,
-            owns_data: false, // Borrowed from OwnedMediaFrame
+            owned: None, // Borrowed from OwnedMediaFrame
         }
     }
 
@@ -221,94 +266,51 @@ impl<'a> Clone for MediaFrame<'a> {
     /// - Use `OwnedMediaFrame` from frame builders for created frames
     /// - Use the safe API (`receive()`) which prevents this issue at compile time
     fn clone(&self) -> Self {
-        // Copy the FFI structure
+        // Copy the FFI structure, then repoint its buffer pointers at freshly
+        // allocated boxes that this clone owns. No `unsafe` and no manual
+        // deallocation: `OwnedBuffers` frees everything on drop.
         let mut ffi = self.ffi;
+        let mut owned = OwnedBuffers::default();
 
-        // Deep copy the main data buffer
+        // Deep copy the main data buffer.
         if !self.ffi.Data.is_null() && self.ffi.DataLength > 0 {
-            let data = self.data();
-            let data_copy = data.to_vec().into_boxed_slice();
-            ffi.Data = Box::into_raw(data_copy) as *mut std::os::raw::c_void;
+            let mut buf = self.data().to_vec().into_boxed_slice();
+            ffi.Data = buf.as_mut_ptr() as *mut std::os::raw::c_void;
+            owned.data = Some(buf);
         }
 
-        // Deep copy the compressed data buffer
+        // Deep copy the compressed data buffer.
         if !self.ffi.CompressedData.is_null() && self.ffi.CompressedLength > 0 {
-            let compressed = self.compressed_data();
-            let compressed_copy = compressed.to_vec().into_boxed_slice();
-            ffi.CompressedData = Box::into_raw(compressed_copy) as *mut std::os::raw::c_void;
+            let mut buf = self.compressed_data().to_vec().into_boxed_slice();
+            ffi.CompressedData = buf.as_mut_ptr() as *mut std::os::raw::c_void;
+            owned.compressed = Some(buf);
         }
 
-        // Deep copy the frame metadata string
+        // Deep copy the frame metadata string (re-appending the null terminator).
         if !self.ffi.FrameMetadata.is_null() && self.ffi.FrameMetadataLength > 0 {
-            let metadata = self.frame_metadata();
-            let mut metadata_copy = metadata.as_bytes().to_vec();
-            metadata_copy.push(0); // Null terminator
-            let metadata_len = metadata_copy.len() as i32;
-            let metadata_box = metadata_copy.into_boxed_slice();
-            ffi.FrameMetadata = Box::into_raw(metadata_box) as *mut std::os::raw::c_void;
-            ffi.FrameMetadataLength = metadata_len;
+            let mut bytes = self.frame_metadata().as_bytes().to_vec();
+            bytes.push(0); // Null terminator
+            let len = bytes.len() as i32;
+            let mut buf = bytes.into_boxed_slice();
+            ffi.FrameMetadata = buf.as_mut_ptr() as *mut std::os::raw::c_void;
+            ffi.FrameMetadataLength = len;
+            owned.metadata = Some(buf);
         }
 
         Self {
             ffi,
             _marker: PhantomData,
-            owns_data: true, // Cloned frame owns its data
-        }
-    }
-}
-
-impl<'a> Drop for MediaFrame<'a> {
-    fn drop(&mut self) {
-        // Only free data if this frame owns it (i.e., it was cloned)
-        if !self.owns_data {
-            return;
-        }
-
-        // SAFETY: We only reach here if owns_data is true, meaning this data
-        // was allocated by Box in the clone() method. We reconstruct the Box
-        // to properly deallocate the memory.
-
-        // Free main data buffer
-        if !self.ffi.Data.is_null() && self.ffi.DataLength > 0 {
-            unsafe {
-                let data = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
-                    self.ffi.Data as *mut u8,
-                    self.ffi.DataLength as usize,
-                ));
-                drop(data);
-            }
-        }
-
-        // Free compressed data buffer
-        if !self.ffi.CompressedData.is_null() && self.ffi.CompressedLength > 0 {
-            unsafe {
-                let compressed = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
-                    self.ffi.CompressedData as *mut u8,
-                    self.ffi.CompressedLength as usize,
-                ));
-                drop(compressed);
-            }
-        }
-
-        // Free frame metadata
-        if !self.ffi.FrameMetadata.is_null() && self.ffi.FrameMetadataLength > 0 {
-            unsafe {
-                let metadata = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
-                    self.ffi.FrameMetadata as *mut u8,
-                    self.ffi.FrameMetadataLength as usize,
-                ));
-                drop(metadata);
-            }
+            owned: Some(owned), // Cloned frame owns its data
         }
     }
 }
 
 // SAFETY: Moving a `MediaFrame` to another thread is sound in both of its forms:
 //
-// * Cloned frames (`owns_data == true`) own heap `Box` buffers outright, so
+// * Cloned frames (`owned.is_some()`) own heap `Box` buffers outright, so
 //   ownership transfer is unconditionally safe.
 //
-// * Borrowed frames (`owns_data == false`) hold a by-value copy of the
+// * Borrowed frames (`owned.is_none()`) hold a by-value copy of the
 //   `OMTMediaFrame` struct whose `Data`/`CompressedData`/`FrameMetadata`
 //   pointers aim into a receiver-owned C buffer. That buffer is freed *only* by
 //   the next `omt_receive` of the same frame type on the same instance, or by

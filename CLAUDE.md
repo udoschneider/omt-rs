@@ -40,7 +40,7 @@ Three layers, bottom to top:
 
 ### Key patterns in the `omt` crate
 
-- **`MediaFrame<'a>` (`frame/mod.rs`)** is the central type — one struct for video/audio/metadata, distinguished at runtime via `frame_type()`. Type-specific methods live in separate impl blocks (`frame/{video,audio,metadata}.rs`). The lifetime `'a` is the core safety mechanism: received frames borrow C-owned memory valid only until the next receive call, and `'a` enforces this at compile time. An `owns_data` flag distinguishes borrowed frames from deep-copied ones — `Clone` performs a full deep copy (potentially ~64MB for 4K) and `Drop` frees only owned buffers.
+- **`MediaFrame<'a>` (`frame/mod.rs`)** is the central type — one struct for video/audio/metadata, distinguished at runtime via `frame_type()`. Type-specific methods live in separate impl blocks (`frame/{video,audio,metadata}.rs`). The lifetime `'a` is the core safety mechanism: received frames borrow C-owned memory valid only until the next receive call, and `'a` enforces this at compile time. An `owned: Option<OwnedBuffers>` field distinguishes borrowed frames (`None`) from deep-copied ones (`Some`) — `Clone` performs a full deep copy (potentially ~64MB for 4K) into heap boxes the frame owns; those boxes free themselves on drop via ordinary RAII, so there is no hand-written `Drop` impl.
 
 - **Hybrid receiver API (`receiver.rs`)** — `receive(&mut self)` is the safe, recommended path (borrow checker prevents holding stale frames); `receive_unchecked(&self)` is an `unsafe` performance escape hatch where the caller must uphold the "no previously-held frame" invariant manually. New feature work should prefer and document the safe path.
 
