@@ -205,26 +205,80 @@ impl<'a> MediaFrame<'a> {
         }
     }
 
-    /// Returns the per-frame metadata as a UTF-8 string if available.
+    /// Returns the raw per-frame metadata bytes if present.
     ///
-    /// Returns an empty string if no metadata is present.
-    /// If the metadata is not valid UTF-8, this will return an empty string.
+    /// This is the primitive accessor for per-frame metadata; the string-typed
+    /// [`try_frame_metadata`](MediaFrame::try_frame_metadata) and
+    /// [`frame_metadata`](MediaFrame::frame_metadata) are layered on top of it.
     ///
-    /// The returned string slice borrows from `self` and cannot outlive this frame.
-    pub fn frame_metadata(&self) -> &str {
+    /// At the ABI level the metadata is an untyped `void* FrameMetadata` with an
+    /// `int FrameMetadataLength`, so this accessor deliberately exposes bytes
+    /// rather than a `&str`: by the OMT protocol *convention* the buffer holds
+    /// UTF-8-encoded, null-terminated XML, but it is supplied by an untrusted
+    /// network sender and may not honour that convention.
+    ///
+    /// The three cases are distinguished as follows:
+    /// - **absent** — `FrameMetadata` is null or `FrameMetadataLength <= 0`:
+    ///   returns `None`.
+    /// - **present but empty** — returns `Some(&[])`.
+    /// - **present** — returns `Some(&[u8])` borrowing `self`, trimmed at the
+    ///   first NUL byte so the trailing null terminator is *not* included.
+    ///
+    /// The returned slice borrows from `self` and cannot outlive this frame.
+    pub fn frame_metadata_bytes(&self) -> Option<&[u8]> {
         if self.ffi.FrameMetadata.is_null() || self.ffi.FrameMetadataLength <= 0 {
-            ""
+            None
         } else {
+            // SAFETY: The returned slice is tied to the borrow of `self`, so it
+            // cannot outlive the frame — and therefore cannot outlive a cloned
+            // frame's owned buffer (freed in Drop) nor a borrowed frame's C
+            // buffer (valid until the next receive). `FrameMetadataLength` is
+            // > 0 here and gives the length of `FrameMetadata` in bytes.
             let bytes = unsafe {
                 slice::from_raw_parts(
                     self.ffi.FrameMetadata as *const u8,
                     self.ffi.FrameMetadataLength as usize,
                 )
             };
-            // Remove null terminator if present
+            // Trim at the first NUL: the buffer is null-terminated by protocol
+            // convention, and the terminator is not part of the payload.
             let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
-            std::str::from_utf8(&bytes[..end]).unwrap_or("")
+            Some(&bytes[..end])
         }
+    }
+
+    /// Returns the per-frame metadata as a UTF-8 string, preserving decode errors.
+    ///
+    /// Unlike [`frame_metadata`](MediaFrame::frame_metadata), this distinguishes
+    /// the three situations the ABI allows instead of collapsing them:
+    /// - **absent** (null pointer or non-positive length) — returns `None`.
+    /// - **present and valid UTF-8** (possibly empty) — returns `Some(Ok(s))`.
+    /// - **present but not valid UTF-8** — returns `Some(Err(e))`.
+    ///
+    /// The metadata is UTF-8-encoded XML by OMT protocol *convention* over an
+    /// untyped `void*` buffer from an untrusted network sender, so the invalid
+    /// case is real rather than theoretical — prefer this accessor when a
+    /// corrupt-but-present signal must not be silently discarded.
+    ///
+    /// The returned string slice borrows from `self` and cannot outlive this frame.
+    pub fn try_frame_metadata(&self) -> Option<Result<&str, std::str::Utf8Error>> {
+        self.frame_metadata_bytes().map(std::str::from_utf8)
+    }
+
+    /// Returns the per-frame metadata as a UTF-8 string if available.
+    ///
+    /// This is the **lossy** convenience accessor: it returns an empty string in
+    /// all three of the cases that
+    /// [`try_frame_metadata`](MediaFrame::try_frame_metadata) distinguishes —
+    /// metadata absent, present but empty, and present but not valid UTF-8. Use
+    /// [`try_frame_metadata`](MediaFrame::try_frame_metadata) or
+    /// [`frame_metadata_bytes`](MediaFrame::frame_metadata_bytes) when those
+    /// cases must be told apart (e.g. so a corrupt-but-present payload is not
+    /// silently swallowed).
+    ///
+    /// The returned string slice borrows from `self` and cannot outlive this frame.
+    pub fn frame_metadata(&self) -> &str {
+        self.try_frame_metadata().and_then(Result::ok).unwrap_or("")
     }
 }
 
@@ -328,3 +382,100 @@ impl<'a> Clone for MediaFrame<'a> {
 // `unsafe impl Sync`; nothing here requires it and it would allow two threads
 // to alias the same borrowed C buffer.
 unsafe impl<'a> Send for MediaFrame<'a> {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::frame_builder::VideoFrameBuilder;
+    use crate::types::Codec;
+
+    /// Builds a small valid video frame, optionally carrying per-frame metadata.
+    fn video_builder(metadata: Option<&str>) -> VideoFrameBuilder {
+        let mut builder = VideoFrameBuilder::new()
+            .codec(Codec::Bgra)
+            .dimensions(2, 2)
+            .data(vec![0u8; 2 * 2 * 4]);
+        if let Some(m) = metadata {
+            builder = builder.frame_metadata(m.to_string());
+        }
+        builder
+    }
+
+    // Case A: metadata absent.
+    #[test]
+    fn frame_metadata_absent() {
+        let owned = video_builder(None).build().unwrap();
+        let frame = owned.as_media_frame();
+
+        assert_eq!(frame.frame_metadata_bytes(), None);
+        assert!(frame.try_frame_metadata().is_none());
+        assert_eq!(frame.frame_metadata(), "");
+    }
+
+    // Case B: metadata present and valid UTF-8 (non-empty).
+    #[test]
+    fn frame_metadata_present_valid() {
+        let owned = video_builder(Some("<tally on=\"1\"/>")).build().unwrap();
+        let frame = owned.as_media_frame();
+
+        assert_eq!(
+            frame.frame_metadata_bytes(),
+            Some(b"<tally on=\"1\"/>".as_slice())
+        );
+        assert_eq!(frame.try_frame_metadata(), Some(Ok("<tally on=\"1\"/>")));
+        assert_eq!(frame.frame_metadata(), "<tally on=\"1\"/>");
+    }
+
+    // Case B: metadata present but empty. `CString::new("")` stores just the NUL
+    // terminator, so the payload trims to an empty slice — still "present".
+    #[test]
+    fn frame_metadata_present_empty() {
+        let owned = video_builder(Some("")).build().unwrap();
+        let frame = owned.as_media_frame();
+
+        assert_eq!(frame.frame_metadata_bytes(), Some(b"".as_slice()));
+        assert_eq!(frame.try_frame_metadata(), Some(Ok("")));
+        assert_eq!(frame.frame_metadata(), "");
+    }
+
+    // Case C: metadata present but not valid UTF-8. Fabricate an FFI frame whose
+    // metadata buffer holds raw non-UTF-8 bytes plus the trailing NUL, mirroring
+    // how `OwnedMediaFrame::as_media_frame` wires up the pointers.
+    #[test]
+    fn frame_metadata_present_invalid_utf8() {
+        // 0xFF, 0xFE is not valid UTF-8; the 0x00 is the null terminator.
+        let bytes: [u8; 3] = [0xFF, 0xFE, 0x00];
+
+        let ffi = omt_sys::OMTMediaFrame {
+            Type: FrameType::VIDEO.to_ffi(),
+            Timestamp: -1,
+            Codec: Codec::Bgra.to_ffi(),
+            Width: 2,
+            Height: 2,
+            Stride: 8,
+            Flags: 0,
+            FrameRateN: 30,
+            FrameRateD: 1,
+            AspectRatio: 16.0 / 9.0,
+            ColorSpace: 0,
+            SampleRate: 0,
+            Channels: 0,
+            SamplesPerChannel: 0,
+            Data: std::ptr::null_mut(),
+            DataLength: 0,
+            CompressedData: std::ptr::null_mut(),
+            CompressedLength: 0,
+            FrameMetadata: bytes.as_ptr() as *mut _,
+            FrameMetadataLength: bytes.len() as i32,
+        };
+
+        // SAFETY: `ffi` is fully initialized and its `FrameMetadata` pointer aims
+        // at `bytes`, which outlives `frame` (same stack scope). The frame's
+        // lifetime is tied to that borrow, so it cannot dangle.
+        let frame = unsafe { MediaFrame::from_owned_ffi(ffi) };
+
+        assert_eq!(frame.frame_metadata_bytes(), Some([0xFF, 0xFE].as_slice()));
+        assert!(matches!(frame.try_frame_metadata(), Some(Err(_))));
+        assert_eq!(frame.frame_metadata(), "");
+    }
+}
