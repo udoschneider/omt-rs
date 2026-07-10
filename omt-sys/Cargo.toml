@@ -1,7 +1,17 @@
 [package]
 name = "omt-sys"
 version = "0.1.0"
-edition = "2024"
+description = "Raw FFI bindings to the Open Media Transport (OMT) C library (libomt)"
+readme = "README.md"
+keywords = ["omt", "ffi", "bindings", "video", "libomt"]
+categories = ["external-ffi-bindings", "multimedia"]
+links = "omt"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
 
 [dependencies]
 

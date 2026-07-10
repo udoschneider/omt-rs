@@ -1,10 +1,19 @@
 [package]
 name = "omt"
 version = "0.1.0"
-edition = "2024"
+description = "Safe, idiomatic Rust bindings for Open Media Transport (OMT)"
+readme = "README.md"
+keywords = ["omt", "video", "audio", "multimedia", "streaming"]
+categories = ["multimedia::video", "multimedia::audio", "api-bindings"]
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
 
 [dependencies]
-omt-sys = { path = "../omt-sys" }
+omt-sys = { path = "../omt-sys", version = "0.1.0" }
 thiserror = "2.0"
 bitflags = "2.6"
 rgb = "0.8.52"
