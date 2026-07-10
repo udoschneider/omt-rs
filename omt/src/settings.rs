@@ -8,7 +8,38 @@
 
 use crate::MAX_STRING_LENGTH;
 use crate::error::{Error, Result};
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
+use std::os::raw::c_char;
+use std::sync::RwLock;
+
+/// The Rust closure invoked for every log line, dispatched by [`logging_trampoline`].
+type LogCallback = Box<dyn Fn(&str) + Send + Sync + 'static>;
+
+/// Storage for the currently registered logging closure.
+///
+/// The C API takes a bare function pointer with no user-data argument, so the
+/// closure has to live in a global that the `extern "C"` trampoline can reach.
+static LOG_CALLBACK: RwLock<Option<LogCallback>> = RwLock::new(None);
+
+/// `extern "C"` shim handed to the OMT library. It forwards each log line to the
+/// closure registered via [`Settings::set_logging_callback`].
+extern "C" fn logging_trampoline(message: *const c_char) {
+    if message.is_null() {
+        return;
+    }
+
+    // SAFETY: The OMT library passes a valid, null-terminated C string that is
+    // only borrowed for the duration of this call.
+    let text = unsafe { CStr::from_ptr(message) }.to_string_lossy();
+
+    // A read lock is enough; log lines may arrive concurrently from many threads.
+    if let Ok(guard) = LOG_CALLBACK.read()
+        && let Some(callback) = guard.as_ref()
+    {
+        // A panic must never unwind across the FFI boundary (undefined behavior).
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| callback(&text)));
+    }
+}
 
 /// Configuration settings manager.
 ///
@@ -182,6 +213,62 @@ impl Settings {
             }
         }
     }
+
+    /// Registers a callback invoked for every log line emitted by the OMT library.
+    ///
+    /// This complements [`set_logging_filename`](Self::set_logging_filename): it lets
+    /// you route log output into your own logging framework instead of (or in addition
+    /// to) a file. Registering a new callback replaces any previously registered one.
+    ///
+    /// The callback may be invoked from arbitrary internal OMT threads, so it must be
+    /// `Send + Sync`. Any panic inside the callback is caught and discarded rather than
+    /// unwinding across the C boundary. Call
+    /// [`clear_logging_callback`](Self::clear_logging_callback) to disable it again.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::Settings;
+    ///
+    /// Settings::set_logging_callback(|line| println!("[omt] {line}"));
+    /// ```
+    pub fn set_logging_callback<F>(callback: F)
+    where
+        F: Fn(&str) + Send + Sync + 'static,
+    {
+        // Store the closure before registering, so the trampoline always finds it.
+        if let Ok(mut guard) = LOG_CALLBACK.write() {
+            *guard = Some(Box::new(callback));
+        }
+
+        // SAFETY: `logging_trampoline` is a valid `extern "C"` function pointer whose
+        // dispatch target now lives in `LOG_CALLBACK`.
+        unsafe {
+            omt_sys::omt_setloggingcallback(Some(logging_trampoline));
+        }
+    }
+
+    /// Disables the log line callback previously set with
+    /// [`set_logging_callback`](Self::set_logging_callback).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use omt::Settings;
+    ///
+    /// Settings::clear_logging_callback();
+    /// ```
+    pub fn clear_logging_callback() {
+        // Stop the library from invoking the trampoline before dropping the closure.
+        // SAFETY: Passing `None` clears the callback in the C library.
+        unsafe {
+            omt_sys::omt_setloggingcallback(None);
+        }
+
+        if let Ok(mut guard) = LOG_CALLBACK.write() {
+            *guard = None;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -201,5 +288,35 @@ mod tests {
         Settings::set_network_port_end(test_end_port);
         let retrieved_end_port = Settings::network_port_end();
         assert_eq!(retrieved_end_port, test_end_port);
+    }
+
+    #[test]
+    fn test_logging_callback_dispatch() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let received = Arc::new(AtomicUsize::new(0));
+        let received_in_cb = Arc::clone(&received);
+
+        Settings::set_logging_callback(move |line| {
+            if line == "hello" {
+                received_in_cb.fetch_add(1, Ordering::SeqCst);
+            }
+        });
+
+        // Invoke the trampoline exactly as the C library would.
+        let message = CString::new("hello").unwrap();
+        logging_trampoline(message.as_ptr());
+
+        // A null pointer must be ignored without dispatching.
+        logging_trampoline(std::ptr::null());
+
+        assert_eq!(received.load(Ordering::SeqCst), 1);
+
+        Settings::clear_logging_callback();
+
+        // After clearing, further trampoline calls must not reach the closure.
+        logging_trampoline(message.as_ptr());
+        assert_eq!(received.load(Ordering::SeqCst), 1);
     }
 }
