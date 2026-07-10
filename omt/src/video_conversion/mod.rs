@@ -14,6 +14,24 @@
 //! - [`MediaFrame::to_rgba8()`](crate::MediaFrame::to_rgba8)
 //! - [`MediaFrame::to_rgb16()`](crate::MediaFrame::to_rgb16)
 //! - [`MediaFrame::to_rgba16()`](crate::MediaFrame::to_rgba16)
+//!
+//! # Input validation contract (read before adding a caller)
+//!
+//! The per-format converters here (`*_to_rgb8`, `*_to_rgba16`, …) **trust**
+//! their `width`/`height`/`stride` arguments: they compute plane sizes and
+//! slice offsets with plain (unchecked) arithmetic and assume the input slice
+//! is large enough. On their own they are therefore *not* safe against
+//! unvalidated, attacker-controlled dimensions — a hostile frame could provoke
+//! an out-of-bounds slice or an overflowing allocation size.
+//!
+//! The single enforcement point is [`required_input_len`], which computes the
+//! minimum buffer size with fully overflow-checked arithmetic. Every public
+//! entry point — the four `MediaFrame::to_*` methods — calls it and rejects the
+//! frame before dispatching, so *reaching a converter always implies the frame
+//! passed that gate*. Those four methods are currently the only callers.
+//!
+//! **If you add another caller, it MUST run the same `required_input_len` check
+//! first.** Do not call a converter directly on frame-supplied dimensions.
 use crate::MediaFrame;
 use crate::types::{Codec, ColorSpace, VideoFlags};
 use yuv::{YuvRange, YuvStandardMatrix};
