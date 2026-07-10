@@ -22,6 +22,7 @@ pub enum Quality {
 
 impl Quality {
     /// Creates a `Quality` from raw FFI value.
+    #[allow(dead_code)] // Inverse of `to_ffi`; kept for API symmetry.
     pub(crate) fn from_ffi(value: u32) -> Option<Self> {
         match value {
             omt_sys::OMTQuality_Default => Some(Self::Default),

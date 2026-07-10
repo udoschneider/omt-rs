@@ -16,7 +16,7 @@ fn test_discovery_basic() {
 
     // Verify all returned strings are valid UTF-8 (already validated by the implementation)
     for addr in &addresses {
-        assert!(!addr.is_empty() || addresses.len() == 0);
+        assert!(!addr.is_empty() || addresses.is_empty());
     }
 }
 

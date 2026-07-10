@@ -349,7 +349,7 @@ mod tests {
     /// - UV plane: interleaved 16-bit U, V pairs, half horizontal resolution
     fn create_gray_p216_data(width: usize, height: usize, yuv_range: YuvRange) -> Vec<u8> {
         let y_stride = width; // In u16 elements
-        let uv_width = (width + 1) / 2;
+        let uv_width = width.div_ceil(2);
 
         let y_plane_size = y_stride * height;
         let uv_plane_size = uv_width * 2 * height; // *2 for interleaved U, V
@@ -364,9 +364,7 @@ mod tests {
         let uv_neutral = 128u16 << 8;
 
         // Fill Y plane
-        for i in 0..y_plane_size {
-            data[i] = y_value;
-        }
+        data[..y_plane_size].fill(y_value);
 
         // Fill UV plane (interleaved)
         let uv_start = y_plane_size;
@@ -390,7 +388,7 @@ mod tests {
         alpha_value: u16,
     ) -> Vec<u8> {
         let y_stride = width;
-        let uv_width = (width + 1) / 2;
+        let uv_width = width.div_ceil(2);
 
         let y_plane_size = y_stride * height;
         let uv_plane_size = uv_width * 2 * height;
@@ -406,9 +404,7 @@ mod tests {
         let uv_neutral = 128u16 << 8;
 
         // Fill Y plane
-        for i in 0..y_plane_size {
-            data[i] = y_value;
-        }
+        data[..y_plane_size].fill(y_value);
 
         // Fill UV plane (interleaved)
         let uv_start = y_plane_size;

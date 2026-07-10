@@ -250,7 +250,8 @@ impl Sender {
     /// # Correct Usage Pattern
     ///
     /// ```no_run
-    /// # use omt::{Sender, Quality};
+    /// # use omt::{MediaFrame, Sender, Quality};
+    /// # fn process_metadata(metadata: &MediaFrame<'_>) {}
     /// # let sender = Sender::new("My Source", Quality::High)?;
     /// // CORRECT: Process and drop frame before next receive
     /// loop {

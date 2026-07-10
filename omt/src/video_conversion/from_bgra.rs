@@ -77,7 +77,7 @@ mod tests {
         let stride = width * 4;
 
         // Convert BGRA to RGB8
-        let actual_rgb_result = bgra_to_rgb8(&bgra_bytes, width, height, stride);
+        let actual_rgb_result = bgra_to_rgb8(bgra_bytes, width, height, stride);
         assert!(
             actual_rgb_result.is_some(),
             "bgra_to_rgb8 should return Some"
@@ -135,7 +135,7 @@ mod tests {
         let stride = width * 4;
 
         // Convert BGRA to RGBA8
-        let actual_rgba_result = bgra_to_rgba8(&bgra_bytes, width, height, stride);
+        let actual_rgba_result = bgra_to_rgba8(bgra_bytes, width, height, stride);
         assert!(
             actual_rgba_result.is_some(),
             "bgra_to_rgba8 should return Some"

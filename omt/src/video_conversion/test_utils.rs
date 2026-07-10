@@ -6,6 +6,9 @@
 //!
 //! Also provides common YUV test utilities for generating test data in various YUV formats.
 
+// Not every generator is exercised by every conversion test; keep the full palette available.
+#![allow(dead_code)]
+
 use rgb::*;
 
 /// RGB test utilities for generating test data in various RGB formats.
@@ -25,7 +28,7 @@ pub mod rgb_utils {
     pub fn rgb8_data() -> Vec<u8> {
         let colors: Vec<Rgb<u8>> = rgb8_colors();
         let bytes: &[u8] = rgb::bytemuck::cast_slice(&colors);
-        return bytes.to_vec();
+        bytes.to_vec()
     }
 
     /// Returns 192 bytes (64 RGBA8 pixels) of test data.
@@ -40,7 +43,7 @@ pub mod rgb_utils {
     pub fn rgba8_data() -> Vec<u8> {
         let colors: Vec<Rgba<u8>> = rgba8_colors();
         let bytes: &[u8] = rgb::bytemuck::cast_slice(&colors);
-        return bytes.to_vec();
+        bytes.to_vec()
     }
 
     /// Returns 96 bytes (16 RGB16 pixels) of test data.
@@ -55,7 +58,7 @@ pub mod rgb_utils {
     pub fn rgb16_data() -> Vec<u8> {
         let colors: Vec<Rgb<u16>> = rgb16_colors();
         let bytes: &[u8] = rgb::bytemuck::cast_slice(&colors);
-        return bytes.to_vec();
+        bytes.to_vec()
     }
 
     /// Returns 384 bytes (64 RGBA16 pixels) of test data.
@@ -70,7 +73,7 @@ pub mod rgb_utils {
     pub fn rgba16_data() -> Vec<u8> {
         let colors: Vec<Rgba<u16>> = rgba16_colors();
         let bytes: &[u8] = rgb::bytemuck::cast_slice(&colors);
-        return bytes.to_vec();
+        bytes.to_vec()
     }
 
     /// Returns 16 RGB8 colors based on CGA palette.
@@ -88,14 +91,14 @@ pub mod rgb_utils {
     /// assert!(colors[0].r <= 255);
     /// ```
     pub fn rgb8_colors() -> Vec<Rgb<u8>> {
-        return cga_colors()
+        cga_colors()
             .iter()
             .map(|c| Rgb::<u8> {
                 r: (c.r * 255.0) as u8,
                 g: (c.g * 255.0) as u8,
                 b: (c.b * 255.0) as u8,
             })
-            .collect();
+            .collect()
     }
 
     /// Returns 64 RGBA8 colors with alpha variations.
@@ -113,7 +116,7 @@ pub mod rgb_utils {
     /// assert!(colors[0].a <= 255);
     /// ```
     pub fn rgba8_colors() -> Vec<Rgba<u8>> {
-        return cga_alpha_colors()
+        cga_alpha_colors()
             .iter()
             .map(|c| Rgba::<u8> {
                 r: (c.r * 255.0) as u8,
@@ -121,7 +124,7 @@ pub mod rgb_utils {
                 b: (c.b * 255.0) as u8,
                 a: (c.a * 255.0) as u8,
             })
-            .collect();
+            .collect()
     }
 
     /// Returns 16 RGB16 colors based on CGA palette.
@@ -139,14 +142,14 @@ pub mod rgb_utils {
     /// assert!(colors[0].r <= 65535);
     /// ```
     pub fn rgb16_colors() -> Vec<Rgb<u16>> {
-        return cga_colors()
+        cga_colors()
             .iter()
             .map(|c| Rgb::<u16> {
                 r: (c.r * 65535.0) as u16,
                 g: (c.g * 65535.0) as u16,
                 b: (c.b * 65535.0) as u16,
             })
-            .collect();
+            .collect()
     }
 
     /// Returns 64 RGBA16 colors with alpha variations.
@@ -164,7 +167,7 @@ pub mod rgb_utils {
     /// assert!(colors[0].a <= 65535);
     /// ```
     pub fn rgba16_colors() -> Vec<Rgba<u16>> {
-        return cga_alpha_colors()
+        cga_alpha_colors()
             .iter()
             .map(|c| Rgba::<u16> {
                 r: (c.r * 65535.0) as u16,
@@ -172,7 +175,7 @@ pub mod rgb_utils {
                 b: (c.b * 65535.0) as u16,
                 a: (c.a * 65535.0) as u16,
             })
-            .collect();
+            .collect()
     }
 
     /// Returns 16 CGA colors in floating-point RGB format.
@@ -208,7 +211,7 @@ pub mod rgb_utils {
     /// assert!(colors[0].a >= 0.0 && colors[0].a <= 1.0);
     /// ```
     pub fn cga_alpha_colors() -> Vec<Rgba<f32>> {
-        (0..64).map(|i| cga_alpha_color(i)).collect()
+        (0..64).map(cga_alpha_color).collect()
     }
 
     /// Generates a single CGA color with alpha from a 6-bit index.
@@ -249,14 +252,14 @@ pub mod rgb_utils {
         let i: f32 = ((index & 0b001000) >> 3) as f32;
         let r: f32 = ((index & 0b000100) >> 2) as f32;
         let g: f32 = ((index & 0b000010) >> 1) as f32;
-        let b: f32 = ((index & 0b000001) >> 0) as f32;
+        let b: f32 = (index & 0b000001) as f32;
 
         let a: f32 = a / 3.0;
         let r: f32 = r * 2.0 / 3.0 + i / 3.0;
         let g: f32 = g * 2.0 / 3.0 + i / 3.0;
         let b: f32 = b * 2.0 / 3.0 + i / 3.0;
         let g: f32 = if index == 6 { g * 2.0 / 3.0 } else { g };
-        return Rgba { r, g, b, a };
+        Rgba { r, g, b, a }
     }
 }
 

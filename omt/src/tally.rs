@@ -65,7 +65,7 @@ impl Tally {
     }
 
     /// Converts to FFI representation.
-    pub(crate) fn to_ffi(&self) -> omt_sys::OMTTally {
+    pub(crate) fn to_ffi(self) -> omt_sys::OMTTally {
         omt_sys::OMTTally {
             preview: if self.preview { 1 } else { 0 },
             program: if self.program { 1 } else { 0 },

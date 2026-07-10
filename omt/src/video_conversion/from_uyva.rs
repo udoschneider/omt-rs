@@ -173,9 +173,7 @@ mod tests {
         }
 
         // Fill alpha plane with the specified alpha value
-        for i in uyvy_size..total_size {
-            uyva_data[i] = alpha_value;
-        }
+        uyva_data[uyvy_size..total_size].fill(alpha_value);
 
         uyva_data
     }
@@ -254,9 +252,7 @@ mod tests {
         }
 
         // Fill alpha plane with the specified alpha value
-        for i in uyvy_size..total_size {
-            uyva_data[i] = alpha_value;
-        }
+        uyva_data[uyvy_size..total_size].fill(alpha_value);
 
         uyva_data
     }

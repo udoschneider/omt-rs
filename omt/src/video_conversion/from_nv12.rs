@@ -93,9 +93,7 @@ mod tests {
         // Set Y plane to middle gray
         let y_value = yuv_utils::middle_gray_y(yuv_range);
 
-        for i in 0..y_plane_size {
-            nv12_data[i] = y_value;
-        }
+        nv12_data[..y_plane_size].fill(y_value);
 
         // Set UV plane to neutral (128, 128) - no color
         let (u_value, v_value) = yuv_utils::neutral_uv();

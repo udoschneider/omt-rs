@@ -61,10 +61,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Check tally state
-        if let Ok((tally, changed)) = sender.get_tally(1000) {
-            if changed {
-                println!("Tally changed: {}", tally);
-            }
+        if let Ok((tally, changed)) = sender.get_tally(1000)
+            && changed
+        {
+            println!("Tally changed: {}", tally);
         }
 
         // In a real application, you would send video/audio frames here

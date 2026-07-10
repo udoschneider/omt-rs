@@ -44,7 +44,7 @@ impl<'a> MediaFrame<'a> {
         }
 
         // Validate alignment for f32 access
-        if data.as_ptr() as usize % std::mem::align_of::<f32>() != 0 {
+        if !(data.as_ptr() as usize).is_multiple_of(std::mem::align_of::<f32>()) {
             return None;
         }
 

@@ -5,7 +5,7 @@ use crate::error::{Error, Result};
 use std::fmt;
 
 /// Information describing the sender.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SenderInfo {
     /// Product name.
     pub product_name: String,
@@ -89,21 +89,9 @@ impl SenderInfo {
 
         // Zero out the rest of the buffer for consistency and security
         // (prevents leaking old data)
-        for i in (bytes.len() + 1)..MAX_STRING_LENGTH {
-            arr[i] = 0;
-        }
+        arr[bytes.len() + 1..MAX_STRING_LENGTH].fill(0);
 
         Ok(())
-    }
-}
-
-impl Default for SenderInfo {
-    fn default() -> Self {
-        Self {
-            product_name: String::new(),
-            manufacturer: String::new(),
-            version: String::new(),
-        }
     }
 }
 

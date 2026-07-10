@@ -89,7 +89,10 @@ mod tests {
     fn test_discovery_get_addresses() {
         // This test will only succeed if there are sources on the network
         let addresses = Discovery::get_addresses();
-        // Should not panic, might be empty
-        assert!(addresses.len() >= 0);
+        // Should not panic; the list might be empty, but any returned address
+        // must be a non-empty, owned string.
+        for address in &addresses {
+            assert!(!address.is_empty());
+        }
     }
 }

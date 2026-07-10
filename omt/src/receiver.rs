@@ -36,7 +36,7 @@ impl Receiver {
     /// # Arguments
     ///
     /// * `address` - Address to connect to. Either the full name from discovery
-    ///               or a URL in the format `omt://hostname:port`
+    ///   or a URL in the format `omt://hostname:port`
     /// * `frame_types` - Types of frames to receive (e.g., Video, Audio, Metadata)
     /// * `format` - Preferred uncompressed video format
     /// * `flags` - Optional flags such as preview mode or compressed data
@@ -159,7 +159,8 @@ impl Receiver {
     /// # Correct Usage Pattern
     ///
     /// ```no_run
-    /// # use omt::{Receiver, FrameType, PreferredVideoFormat, ReceiveFlags};
+    /// # use omt::{MediaFrame, Receiver, FrameType, PreferredVideoFormat, ReceiveFlags};
+    /// # fn process_frame(frame: &MediaFrame<'_>) {}
     /// # let receiver = Receiver::new("omt://localhost:6400", FrameType::VIDEO, PreferredVideoFormat::Uyvy, ReceiveFlags::NONE)?;
     /// // CORRECT: Process and drop frame before next receive
     /// loop {

@@ -307,7 +307,7 @@ fn test_metadata_frame_builder_basic() {
         .build()
         .expect("Failed to build metadata frame");
 
-    assert!(frame.data().len() > 0);
+    assert!(!frame.data().is_empty());
 }
 
 #[test]

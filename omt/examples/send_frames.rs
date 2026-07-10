@@ -58,22 +58,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let timestamp = (elapsed.as_secs_f64() * 10_000_000.0) as i64;
 
         // Send a video frame every iteration
-        if frame_count % 1 == 0 {
-            send_video_frame(&sender, timestamp, &testcard_data)?;
-        }
+        send_video_frame(&sender, timestamp, &testcard_data)?;
 
         // Send an audio frame every iteration (with more samples than video frames)
         audio_sample_offset = send_audio_frame(&sender, timestamp, audio_sample_offset)?;
 
         // Send metadata every 30 frames
-        if frame_count % 30 == 0 {
+        if frame_count.is_multiple_of(30) {
             send_metadata_frame(&sender, timestamp, frame_count)?;
         }
 
         frame_count += 1;
 
         // Print status
-        if frame_count % 30 == 0 {
+        if frame_count.is_multiple_of(30) {
             println!(
                 "Sent {} frames, {} connections",
                 frame_count,

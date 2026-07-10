@@ -84,6 +84,7 @@ impl<'a> MediaFrame<'a> {
     }
 
     /// Returns a mutable reference to the underlying FFI structure.
+    #[allow(dead_code)] // Companion to `as_ffi`; kept for API symmetry.
     pub(crate) fn as_ffi_mut(&mut self) -> &mut omt_sys::OMTMediaFrame {
         &mut self.ffi
     }
@@ -249,7 +250,7 @@ impl<'a> Drop for MediaFrame<'a> {
         // Free main data buffer
         if !self.ffi.Data.is_null() && self.ffi.DataLength > 0 {
             unsafe {
-                let data = Box::from_raw(std::slice::from_raw_parts_mut(
+                let data = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
                     self.ffi.Data as *mut u8,
                     self.ffi.DataLength as usize,
                 ));
@@ -260,7 +261,7 @@ impl<'a> Drop for MediaFrame<'a> {
         // Free compressed data buffer
         if !self.ffi.CompressedData.is_null() && self.ffi.CompressedLength > 0 {
             unsafe {
-                let compressed = Box::from_raw(std::slice::from_raw_parts_mut(
+                let compressed = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
                     self.ffi.CompressedData as *mut u8,
                     self.ffi.CompressedLength as usize,
                 ));
@@ -271,7 +272,7 @@ impl<'a> Drop for MediaFrame<'a> {
         // Free frame metadata
         if !self.ffi.FrameMetadata.is_null() && self.ffi.FrameMetadataLength > 0 {
             unsafe {
-                let metadata = Box::from_raw(std::slice::from_raw_parts_mut(
+                let metadata = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
                     self.ffi.FrameMetadata as *mut u8,
                     self.ffi.FrameMetadataLength as usize,
                 ));
