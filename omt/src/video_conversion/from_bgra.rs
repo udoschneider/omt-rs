@@ -7,15 +7,16 @@ pub fn bgra_to_rgb8(
     raw_data: &[u8],
     width: usize,
     height: usize,
-    _stride: usize,
+    stride: usize,
 ) -> Option<Vec<RGB8>> {
     let mut rgb_data = vec![RGB8::new(0, 0, 0); width * height];
 
-    let rgba_stride = (width * 4) as u32;
+    // Honor the source row pitch: BGRA rows may be padded (stride > width * 4).
+    let bgra_stride = stride as u32;
     let rgb_stride = (width * 3) as u32;
     yuv::bgra_to_rgb(
         raw_data,
-        rgba_stride,
+        bgra_stride,
         bytemuck::cast_slice_mut(&mut rgb_data),
         rgb_stride,
         width as u32,
@@ -30,11 +31,12 @@ pub fn bgra_to_rgba8(
     raw_data: &[u8],
     width: usize,
     height: usize,
-    _stride: usize,
+    stride: usize,
 ) -> Option<Vec<RGBA8>> {
     let mut rgba_data = vec![RGBA8::new(0, 0, 0, 255); width * height];
 
-    let bgra_stride = (width * 4) as u32;
+    // Honor the source row pitch: BGRA rows may be padded (stride > width * 4).
+    let bgra_stride = stride as u32;
     let rgba_stride = (width * 4) as u32;
     yuv::bgra_to_rgba(
         raw_data,
