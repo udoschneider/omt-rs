@@ -339,7 +339,17 @@ impl AudioFrameBuilder {
             });
         }
 
-        let expected_size = (self.samples_per_channel * self.channels * 4) as usize;
+        // Compute in `usize` with checked multiplication: doing it in `i32`
+        // (`samples_per_channel * channels * 4`) can overflow and wrap, which
+        // would let a mismatched buffer slip past this validation. Both factors
+        // are already validated positive above, so the casts are lossless.
+        let expected_size = (self.samples_per_channel as usize)
+            .checked_mul(self.channels as usize)
+            .and_then(|v| v.checked_mul(4))
+            .ok_or_else(|| Error::InvalidParameter {
+                parameter: "data".to_string(),
+                reason: "audio frame size overflows usize".to_string(),
+            })?;
         if self.data.len() != expected_size {
             return Err(Error::InvalidParameter {
                 parameter: "data".to_string(),
