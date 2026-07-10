@@ -303,6 +303,26 @@ impl<'a> Drop for MediaFrame<'a> {
     }
 }
 
-// SAFETY: MediaFrame contains borrowed data with lifetime 'a, which prevents
-// use-after-free. The underlying C library is thread-safe for read operations.
+// SAFETY: Moving a `MediaFrame` to another thread is sound in both of its forms:
+//
+// * Cloned frames (`owns_data == true`) own heap `Box` buffers outright, so
+//   ownership transfer is unconditionally safe.
+//
+// * Borrowed frames (`owns_data == false`) hold a by-value copy of the
+//   `OMTMediaFrame` struct whose `Data`/`CompressedData`/`FrameMetadata`
+//   pointers aim into a receiver-owned C buffer. That buffer is freed *only* by
+//   the next `omt_receive` of the same frame type on the same instance, or by
+//   destroying the instance — never asynchronously by an internal thread (the
+//   library keeps one `lastVideo`/`lastAudio`/`lastMetadata` slot per instance
+//   and recycles it synchronously inside the receive call). On the safe
+//   `receive(&mut self)` path the borrow checker therefore serializes any
+//   invalidation behind the frame's lifetime regardless of which thread holds
+//   the frame; on the `receive_unchecked(&self)` path the same guarantee is the
+//   caller's documented safety contract.
+//
+// This impl deliberately grants `Send` but NOT `Sync`: the raw pointers in
+// `OMTMediaFrame` keep `MediaFrame` `!Sync`, so a `&MediaFrame` can never be
+// shared across threads — only ownership can be transferred. Do not add an
+// `unsafe impl Sync`; nothing here requires it and it would allow two threads
+// to alias the same borrowed C buffer.
 unsafe impl<'a> Send for MediaFrame<'a> {}

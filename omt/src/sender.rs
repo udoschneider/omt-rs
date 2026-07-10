@@ -163,6 +163,14 @@ impl Sender {
     /// # Ok::<(), omt::Error>(())
     /// ```
     pub fn send(&self, frame: &MediaFrame<'_>) -> Result<bool> {
+        // SAFETY: `omt_send` takes a non-const `OMTMediaFrame*`, but the
+        // implementation only reads it: `omt_send` marshals the frame in via
+        // `OMTMediaFrame.FromIntPtr` (a `Marshal.PtrToStructure`, i.e. a pure
+        // copy out of our memory) and encodes from that managed copy. Neither
+        // the struct fields nor the `Data`/`FrameMetadata` buffers are written
+        // back through the pointer, so casting our shared `&` to `*mut` never
+        // results in a write through a shared reference and cannot mutate the
+        // caller's `OwnedMediaFrame`. The handle is a valid live instance.
         let result = unsafe {
             omt_sys::omt_send(
                 self.handle.as_ptr() as *mut _,
@@ -194,7 +202,14 @@ impl Sender {
     ///
     /// # Returns
     ///
-    /// Returns `Ok(Some(frame))` if metadata was received, `Ok(None)` if timed out.
+    /// Returns `Ok(Some(frame))` if metadata was received, `Ok(None)` if none
+    /// arrived before the timeout.
+    ///
+    /// Note on errors: the underlying C API reports "no frame" with a null
+    /// pointer and exposes no separate error channel — it catches and logs any
+    /// internal error itself, then also returns null. `Ok(None)` therefore means
+    /// "no metadata this call" and cannot be distinguished from an internal
+    /// failure.
     ///
     /// # Frame Lifetime
     ///
@@ -254,7 +269,14 @@ impl Sender {
     ///
     /// # Returns
     ///
-    /// Returns `Ok(Some(frame))` if metadata was received, `Ok(None)` if timed out.
+    /// Returns `Ok(Some(frame))` if metadata was received, `Ok(None)` if none
+    /// arrived before the timeout.
+    ///
+    /// Note on errors: the underlying C API reports "no frame" with a null
+    /// pointer and exposes no separate error channel — it catches and logs any
+    /// internal error itself, then also returns null. `Ok(None)` therefore means
+    /// "no metadata this call" and cannot be distinguished from an internal
+    /// failure.
     ///
     /// # Correct Usage Pattern
     ///
