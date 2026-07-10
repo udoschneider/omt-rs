@@ -61,6 +61,42 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
   # ---------------------------------------------------------------------------
+  # Fast tier: cross-compile type-check for aarch64. `c_char` is signed (`i8`) on
+  # x86_64 but unsigned (`u8`) on Linux aarch64/arm, so bindgen emits different
+  # element types for the libomt char arrays there. This job re-runs bindgen for
+  # the aarch64 target (cargo exports TARGET, which bindgen forwards to libclang)
+  # and type-checks the crate against those bindings, catching portability
+  # regressions the x86_64 jobs cannot. `cargo check` does not link, so no
+  # aarch64 libomt.so is required — only the vendored header and libclang.
+  # ---------------------------------------------------------------------------
+  cross-arm64:
+    name: Cross-check (aarch64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install libclang + aarch64 cross sysroot (for bindgen)
+        run: sudo apt-get update && sudo apt-get install -y clang libclang-dev gcc-aarch64-linux-gnu
+
+      - name: Install Rust ${{ env.RUST_TOOLCHAIN }} (aarch64 target)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: aarch64-unknown-linux-gnu
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Check only the library crates: their public API is where the char-buffer
+      # portability lives, and this avoids cross-compiling the heavy native
+      # dev-dependencies (image, viuer) pulled in by --all-targets.
+      - name: cargo check (aarch64-unknown-linux-gnu)
+        run: cargo check -p omt-sys -p omt --target aarch64-unknown-linux-gnu
+        env:
+          # Point bindgen's libclang at the aarch64 sysroot so any system header
+          # it pulls in resolves for the cross target.
+          BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_gnu: "--sysroot=/usr/aarch64-linux-gnu"
+
+  # ---------------------------------------------------------------------------
   # Full tier: build the native libomt from the upstream .NET sources, install
   # it, then run the real test suite (unit + integration + doctests), build the
   # examples, and check the docs. This is what verifies the memory-safety
