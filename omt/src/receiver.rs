@@ -91,7 +91,15 @@ impl Receiver {
     ///
     /// # Returns
     ///
-    /// Returns `Ok(Some(frame))` if a frame was received, `Ok(None)` if timed out.
+    /// Returns `Ok(Some(frame))` if a frame was received, `Ok(None)` if none
+    /// arrived before the timeout.
+    ///
+    /// Note on errors: the underlying C API reports "no frame" with a null
+    /// pointer and exposes no separate error channel — it catches and logs any
+    /// internal error itself, then also returns null. `Ok(None)` therefore means
+    /// "no frame this call" and cannot be distinguished from an internal
+    /// failure. A persistent `None` across many calls usually indicates the
+    /// sender is unavailable rather than a momentary timeout.
     ///
     /// # Frame Lifetime
     ///
@@ -163,7 +171,15 @@ impl Receiver {
     ///
     /// # Returns
     ///
-    /// Returns `Ok(Some(frame))` if a frame was received, `Ok(None)` if timed out.
+    /// Returns `Ok(Some(frame))` if a frame was received, `Ok(None)` if none
+    /// arrived before the timeout.
+    ///
+    /// Note on errors: the underlying C API reports "no frame" with a null
+    /// pointer and exposes no separate error channel — it catches and logs any
+    /// internal error itself, then also returns null. `Ok(None)` therefore means
+    /// "no frame this call" and cannot be distinguished from an internal
+    /// failure. A persistent `None` across many calls usually indicates the
+    /// sender is unavailable rather than a momentary timeout.
     ///
     /// # Correct Usage Pattern
     ///
@@ -251,12 +267,48 @@ impl Receiver {
         Ok(unsafe { MediaFrame::from_ffi_ptr(ptr) })
     }
 
-    /// Sends a metadata frame to the sender.
+    /// Sends a metadata frame back to the connected sender.
     ///
-    /// Only metadata frames are supported for sending from a receiver.
-    pub fn send_metadata(&self, _frame: &MediaFrame<'_>) -> Result<bool> {
-        // TODO: Implement when we have a MediaFrame builder
-        Ok(false)
+    /// Only metadata frames are supported on this channel; passing a video or
+    /// audio frame returns [`Error::InvalidParameter`] without touching the C
+    /// library. Build a frame with [`MetadataFrameBuilder`](crate::MetadataFrameBuilder)
+    /// and convert it via [`OwnedMediaFrame::as_media_frame`](crate::OwnedMediaFrame::as_media_frame).
+    ///
+    /// Returns `Ok(true)` if the frame was accepted for sending, `Ok(false)`
+    /// otherwise (e.g. no sender is currently connected).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use omt::{Receiver, FrameType, PreferredVideoFormat, ReceiveFlags, MetadataFrameBuilder};
+    /// # let receiver = Receiver::new("omt://localhost:6400", FrameType::METADATA, PreferredVideoFormat::Uyvy, ReceiveFlags::NONE)?;
+    /// let frame = MetadataFrameBuilder::new()
+    ///     .metadata("<metadata>hello</metadata>")
+    ///     .build()?;
+    /// receiver.send_metadata(&frame.as_media_frame())?;
+    /// # Ok::<(), omt::Error>(())
+    /// ```
+    pub fn send_metadata(&self, frame: &MediaFrame<'_>) -> Result<bool> {
+        if frame.frame_type() != FrameType::METADATA {
+            return Err(Error::InvalidParameter {
+                parameter: "frame".to_string(),
+                reason: "only metadata frames can be sent from a receiver".to_string(),
+            });
+        }
+
+        // SAFETY: `omt_receive_send` takes a non-const `OMTMediaFrame*` but only
+        // reads it — it marshals the frame in via `OMTMediaFrame.FromIntPtr` (a
+        // `Marshal.PtrToStructure`, i.e. a pure copy out of our memory) and
+        // sends from that managed copy, so the `&` -> `*mut` cast never results
+        // in a write through the shared reference. The handle is a valid live
+        // instance.
+        let result = unsafe {
+            omt_sys::omt_receive_send(
+                self.handle.as_ptr() as *mut _,
+                frame.as_ffi() as *const _ as *mut _,
+            )
+        };
+        Ok(result != 0)
     }
 
     /// Sets the tally state for this receiver.
