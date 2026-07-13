@@ -82,7 +82,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Sending Media
 
 ```rust
-use omt::{Sender, Quality, SenderInfo, VideoFrameBuilder, Codec};
+use omt::{Sender, Quality, SenderInfo, VideoFrameBuilder, Codec, FrameRate};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create sender
@@ -101,7 +101,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let frame = VideoFrameBuilder::new()
         .codec(Codec::Uyvy)
         .dimensions(1920, 1080)
-        .frame_rate(30, 1)
+        .frame_rate(FrameRate::fps_30())
         .aspect_ratio(16.0 / 9.0)
         .data(data)
         .build()?;

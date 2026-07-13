@@ -54,14 +54,14 @@ use omt_sys::*;
 
 fn main() {
     unsafe {
-        // Get available sources on the network
+        // Get available sources on the network. The returned `char**` array is
+        // owned by the C library and remains valid only until the next call —
+        // there is no free function, so copy out anything you need immediately.
         let mut count: i32 = 0;
-        let addresses = OMTDiscovery_GetAddresses(&mut count as *mut i32);
-        
+        let addresses = omt_discovery_getaddresses(&mut count as *mut i32);
+
         println!("Found {} OMT sources", count);
-        
-        // Clean up
-        OMTDiscovery_FreeAddresses(addresses);
+        let _ = addresses;
     }
 }
 ```
@@ -78,11 +78,12 @@ The bindings include the following main components:
 
 ### Types
 
-- **`OMTSender`**: Opaque sender handle
-- **`OMTReceiver`**: Opaque receiver handle
-- **`OMTMediaFrame`**: Media frame handle
-- **`OMTFrame`**: Frame structure containing pixel/audio data
-- **`OMTString`**: OMT string type (fixed-size array)
+- **`omt_send_t`**: Opaque sender handle
+- **`omt_receive_t`**: Opaque receiver handle
+- **`OMTMediaFrame`**: Frame structure containing pixel/audio data and metadata
+- **`OMTSenderInfo`**: Sender description (product name, manufacturer, version)
+- **`OMTStatistics`**: Frame/byte/codec-time counters
+- **`OMTTally`**: Program/preview tally state
 
 ### Enumerations
 
@@ -96,39 +97,51 @@ The bindings include the following main components:
 
 ### Functions
 
-The bindings expose all OMT C API functions, including:
+The bindings expose all OMT C API functions. Function names are lower
+snake_case, matching the C header exactly. The main ones are:
 
 #### Discovery
-- `OMTDiscovery_GetAddresses()` - Get available sources
-- `OMTDiscovery_FreeAddresses()` - Free address list
+- `omt_discovery_getaddresses()` - Get available sources (returns a `char**`
+  owned by the library; there is no corresponding free function)
 
 #### Sender
-- `OMTSender_Create()` - Create sender
-- `OMTSender_Destroy()` - Destroy sender
-- `OMTSender_Send()` - Send media frame
-- `OMTSender_GetTally()` - Get tally state
-- `OMTSender_SetSenderInformation()` - Set metadata
+- `omt_send_create()` - Create sender
+- `omt_send_destroy()` - Destroy sender
+- `omt_send()` - Send a media frame (video, audio, or metadata)
+- `omt_send_receive()` - Receive metadata from receivers
+- `omt_send_gettally()` - Get tally state
+- `omt_send_setsenderinformation()` - Set sender metadata
+- `omt_send_connections()` - Number of active connections
+- `omt_send_getaddress()` - Get the discovery address
 
 #### Receiver
-- `OMTReceiver_Create()` - Create receiver
-- `OMTReceiver_Destroy()` - Destroy receiver
-- `OMTReceiver_ReceiveVideo()` - Receive video frame
-- `OMTReceiver_ReceiveAudio()` - Receive audio frame
-- `OMTReceiver_ReceiveMetadata()` - Receive metadata frame
-- `OMTReceiver_SetTally()` - Set tally state
+- `omt_receive_create()` - Create receiver
+- `omt_receive_destroy()` - Destroy receiver
+- `omt_receive()` - Receive a frame; the requested frame type(s) are passed as
+  an argument, so a single function covers video, audio, and metadata
+- `omt_receive_send()` - Send metadata back to the sender
+- `omt_receive_settally()` - Set tally state
+- `omt_receive_setflags()` - Change receive flags
+- `omt_receive_setsuggestedquality()` - Suggest an encoding quality
 
-#### Frame Management
-- `OMTMediaFrame_CreateVideo()` - Create video frame
-- `OMTMediaFrame_CreateAudio()` - Create audio frame
-- `OMTMediaFrame_CreateMetadata()` - Create metadata frame
-- `OMTMediaFrame_Destroy()` - Destroy frame
-- `OMTMediaFrame_GetType()` - Get frame type
+#### Frame data
+
+The C API does not create or destroy frames; `OMTMediaFrame` is a plain struct
+you populate and pass to `omt_send`. The frames returned by `omt_receive` point
+into buffers owned by the library and must not be freed by the caller (they are
+valid only until the next receive of the same type on that instance).
+
+#### Statistics
+- `omt_send_getvideostatistics()` / `omt_send_getaudiostatistics()`
+- `omt_receive_getvideostatistics()` / `omt_receive_getaudiostatistics()`
 
 #### Settings
-- `OMTSettings_SetDiscoveryServer()` - Configure discovery
-- `OMTSettings_SetNetworkPortStart()` - Set port range start
-- `OMTSettings_SetNetworkPortEnd()` - Set port range end
-- `OMTSettings_SetLoggingFilename()` - Configure logging
+- `omt_settings_set_string()` / `omt_settings_get_string()` - String settings
+  (e.g. `"DiscoveryServer"`)
+- `omt_settings_set_integer()` / `omt_settings_get_integer()` - Integer settings
+  (e.g. `"NetworkPortStart"`, `"NetworkPortEnd"`)
+- `omt_setloggingfilename()` - Configure the log file
+- `omt_setloggingcallback()` - Register a logging callback
 
 ## Codec Support
 
@@ -186,13 +199,13 @@ use std::ffi::CString;
 
 unsafe {
     let name = CString::new("My Sender").unwrap();
-    let sender = OMTSender_Create(name.as_ptr(), OMTQuality_High);
-    
+    let sender = omt_send_create(name.as_ptr(), OMTQuality_High);
+
     if !sender.is_null() {
         // Use sender...
-        
+
         // Cleanup
-        OMTSender_Destroy(sender);
+        omt_send_destroy(sender);
     }
 }
 ```
@@ -205,19 +218,20 @@ use std::ffi::CString;
 
 unsafe {
     let address = CString::new("omt://hostname:6400").unwrap();
-    let receiver = OMTReceiver_Create(
+    let receiver = omt_receive_create(
         address.as_ptr(),
         OMTFrameType_Video | OMTFrameType_Audio,
         OMTPreferredVideoFormat_UYVY,
         OMTReceiveFlags_None,
     );
-    
+
     if !receiver.is_null() {
-        // Receive frames...
-        let frame = OMTReceiver_ReceiveVideo(receiver, 1000);
-        
+        // Receive a video frame (frame type is an argument, not a separate call)
+        let frame = omt_receive(receiver, OMTFrameType_Video, 1000);
+        let _ = frame;
+
         // Cleanup
-        OMTReceiver_Destroy(receiver);
+        omt_receive_destroy(receiver);
     }
 }
 ```
@@ -242,16 +256,22 @@ Full C API documentation is available in `libomt.h`. Key concepts:
 - **Color Spaces**: Automatic detection (BT.601 for SD, BT.709 for HD+) or manual specification
 - **Quality Levels**: Sender can accept receiver quality suggestions or override
 - **Video Flags**: Support for interlaced, alpha, high bit depth, and preview frames
-- **Frame Lifecycle**: Frames must be explicitly destroyed after use
+- **Frame Lifecycle**: Frames returned by `omt_receive` are owned by the library
+  and must **not** be freed; they stay valid only until the next receive of the
+  same type on that instance. Frames you build for `omt_send` are plain structs
+  you own — there is no create/destroy call in the C API.
 
 ## Safety Considerations
 
 When using `omt-sys` directly:
 
 1. **Null checks**: Always check that pointers returned from OMT are non-null
-2. **Memory management**: Destroy/free all resources when done
+2. **Memory management**: Destroy senders/receivers (`omt_send_destroy` /
+   `omt_receive_destroy`) when done. Received frame buffers are library-owned and
+   must not be freed.
 3. **String handling**: Use `CString` for passing Rust strings to C
-4. **Lifetimes**: Ensure frames are not destroyed while still in use
+4. **Lifetimes**: Don't hold a received frame past the next receive call on the
+   same instance and frame type — its buffer is reused
 5. **Error handling**: Check return values and error conditions
 
 ## Comparison: omt-sys vs omt
