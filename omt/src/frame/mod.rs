@@ -88,11 +88,15 @@ impl<'a> MediaFrame<'a> {
                 "libomt returned Data=null with DataLength={} (broken frame-buffer contract)",
                 ffi.DataLength,
             );
-            debug_assert!(
-                !(ffi.CompressedLength > 0 && ffi.CompressedData.is_null()),
-                "libomt returned CompressedData=null with CompressedLength={}",
-                ffi.CompressedLength,
-            );
+            // NOTE: There is intentionally *no* analogous canary for the
+            // `CompressedData`/`CompressedLength` pair. `libomt.h` documents that
+            // `CompressedData` is only populated when the `IncludeCompressed` or
+            // `CompressedOnly` receive flags are set, but libomt still fills in
+            // `CompressedLength` with the compressed VMX1 frame size regardless.
+            // So `CompressedLength > 0` with a null `CompressedData` is a normal,
+            // expected state (observed with plain `ReceiveFlags::NONE`), not a
+            // broken buffer contract. `compressed_data()` guards the null case
+            // and returns `&[]` there, so release builds remain sound.
             debug_assert!(
                 !(ffi.FrameMetadataLength > 0 && ffi.FrameMetadata.is_null()),
                 "libomt returned FrameMetadata=null with FrameMetadataLength={}",
