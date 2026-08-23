@@ -36,16 +36,21 @@ omt-sys = "0.1"
 
 ### Prerequisites
 
-The OMT C library must be installed on your system:
+On macOS and Windows the build script downloads the pinned prebuilt `libomt`
+binaries from the [`libomtnet` releases](https://github.com/openmediatransport/libomtnet/releases)
+automatically, so there is nothing to install. The download is verified against
+a SHA-256 checksum and cached under `~/.cargo/omt/<version>/`.
 
-1. **Download libomt**: Get the latest release from [openmediatransport/libomt](https://github.com/openmediatransport/libomt)
+On Linux (no prebuilt binaries are published) you must obtain `libomt` yourself:
 
-2. **Install the library**:
-   - **macOS**: Library should be installed to `/usr/local/lib` or `/opt/homebrew/lib`
-   - **Linux**: Library should be installed to `/usr/local/lib` or `/usr/lib`
-   - **Windows**: Library should be available in the system library path
+1. **Build or download libomt**: Build from source at [openmediatransport/libomt](https://github.com/openmediatransport/libomt)
+   or use a distribution package.
 
-3. **Verify installation**: Ensure `libomt.h` is available and the shared library (`libomt.so`, `libomt.dylib`, or `omt.dll`) is in your system's library path.
+2. **Install the library** to `/usr/local/lib` or `/usr/lib`, **or** set
+   `OMT_LIB_DIR` to the directory containing `libomt.so`.
+
+Set `OMT_LIB_DIR` on any platform to skip the download and link against a
+specific directory (e.g. for offline builds).
 
 ## Usage
 
@@ -167,27 +172,36 @@ See `libomt.h` for detailed codec specifications.
 
 This crate uses a `build.rs` script that:
 
-1. Searches for the OMT library in standard locations:
-   - `/usr/local/lib`
-   - `/usr/lib`
-   - `/opt/homebrew/lib` (macOS)
+1. Resolves the `libomt` shared library, in order of preference:
+   - `OMT_LIB_DIR` (explicit override — never touches the network)
+   - a previously downloaded cache (offline after the first build)
+   - the pinned prebuilt release, downloaded and SHA-256-verified (macOS/Windows)
+   - the conventional system locations `/usr/local/lib`, `/usr/lib`, `/opt/homebrew/lib`
 
-2. Generates Rust bindings from `libomt.h` using `bindgen`
+2. Generates Rust bindings from the vendored `libomt.h` using `bindgen`. The
+   downloaded release's header is verified to match the vendored one, so the
+   bindings and the binary always describe the same ABI.
 
-3. Links against the OMT shared library
+3. Links against the `omt` shared library.
+
+The resolved library location is exported to dependent crates via the
+`links = "omt"` metadata (`DEP_OMT_LIBDIR`) and to this crate's code via the
+[`OMT_LIB_DIR`] / [`OMT_LIB_FILE`] constants.
 
 ### Custom Library Path
 
-If your OMT library is installed in a non-standard location, set the library search path:
+If your OMT library is installed in a non-standard location, set `OMT_LIB_DIR`
+(or `LIBRARY_PATH`):
 
 ```bash
 # Linux/macOS
-export LIBRARY_PATH=/path/to/omt/lib:$LIBRARY_PATH
-export LD_LIBRARY_PATH=/path/to/omt/lib:$LD_LIBRARY_PATH
+export OMT_LIB_DIR=/path/to/omt/lib
 
 # Build
 cargo build
 ```
+
+`OMT_CACHE_DIR` relocates the download cache (default `~/.cargo/omt/<version>`).
 
 ## Examples
 

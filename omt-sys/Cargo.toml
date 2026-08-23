@@ -18,3 +18,5 @@ publish = false
 
 [build-dependencies]
 bindgen = "0.71.0"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+sha2 = "0.10"

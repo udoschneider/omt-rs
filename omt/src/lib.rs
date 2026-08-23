@@ -98,19 +98,26 @@
 //! This crate is a thin wrapper, but the native stack behind it has a larger
 //! footprint than a typical C library. At runtime you need:
 //!
-//! - **`libomt.so`** — the OMT C library this crate links against. It embeds a
-//!   .NET (Native-AOT) implementation, so it is self-contained but sizeable.
+//! - **`libomt`** (`.dylib` / `.dll` / `.so`) — the OMT C library this crate
+//!   links against. It embeds a .NET (Native-AOT) implementation, so it is
+//!   self-contained but sizeable. On macOS and Windows the build script
+//!   downloads and links a pinned prebuilt copy (see the workspace README); on
+//!   Linux it must be built from source. It cannot be statically linked into
+//!   your binary.
 //! - **Avahi** (`libavahi-client`, `avahi-daemon`) — required for network
 //!   discovery ([`Discovery`]) via mDNS. Sending/receiving to a known address
 //!   works without it; enumerating sources does not.
-//! - **`libvmx.so`** — the VMX video codec, loaded lazily via `dlopen` only when
+//! - **`libvmx`** — the VMX video codec, loaded lazily via `dlopen` only when
 //!   encoding or decoding compressed (`Vmx1`) video. It must sit on the loader
 //!   path next to your application. It is *not* needed for uncompressed formats
 //!   or for the CPU-side RGB conversions in this crate (those use the pure-Rust
 //!   `yuv` crate).
 //!
-//! On Linux none of these ship prebuilt; see the workspace README for building
-//! them from source.
+//! On macOS and Windows the `libomt` (and `libvmx`) binaries are co-located in
+//! the download cache, and the crate embeds an rpath (macOS) so tests and
+//! examples resolve them at runtime. To ship an application, copy
+//! `omt_sys::OMT_LIB_FILE` (and the `libvmx` binary) next to your executable,
+//! or into your application bundle.
 //!
 //! # Safety assumptions about the `libomt` C library
 //!

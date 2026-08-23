@@ -92,30 +92,36 @@ Low-level FFI bindings generated from the OMT C library headers.
 
 ## Prerequisites
 
-The OMT C library must be installed on your system before building:
+The `libomt` native library is required at build and run time. How it is obtained
+depends on your platform:
 
-### Installation
+- **macOS & Windows** — no manual setup. The build script downloads the prebuilt
+  binaries from the pinned [`libomtnet` release](https://github.com/openmediatransport/libomtnet/releases),
+  verifies their SHA-256 checksum, and links against them. The files are cached
+  under `~/.cargo/omt/<version>/` and re-used across builds and projects.
 
-1. **Download libomt**: Get the latest release from [openmediatransport/libomt](https://github.com/openmediatransport/libomt)
+- **Linux** — no prebuilt binaries are published, so build `libomt` from source
+  (see the [libomt](https://github.com/openmediatransport/libomt) repository) and
+  install it to `/usr/local/lib` / `/usr/lib`, or point `OMT_LIB_DIR` at it.
 
-2. **Install the library**:
-   - **macOS**: Install to `/usr/local/lib` or `/opt/homebrew/lib`
-   - **Linux**: Install to `/usr/local/lib` or `/usr/lib`
-   - **Windows**: Ensure library is in system PATH
+### Using a pre-fetched or system library
 
-3. **Verify**: Ensure the shared library is accessible:
-   ```bash
-   # macOS
-   ls /usr/local/lib/libomt.dylib
-   # or
-   ls /opt/homebrew/lib/libomt.dylib
-   
-   # Linux
-   ls /usr/local/lib/libomt.so
-   
-   # Windows
-   where omt.dll
-   ```
+To skip the automatic download (e.g. offline builds, or to pin a different
+location), set `OMT_LIB_DIR` to a directory containing the `libomt` shared
+library:
+
+```bash
+export OMT_LIB_DIR=/path/to/libomt
+cargo build
+```
+
+`OMT_CACHE_DIR` relocates the download cache; `LIBRARY_PATH` / `LD_LIBRARY_PATH`
+are also respected as a fallback. On macOS the crate embeds the resolved
+directory as an rpath, so tests and examples run without further setup. To
+bundle the library into your application for distribution, read
+`omt_sys::OMT_LIB_DIR` / `omt_sys::OMT_LIB_FILE` at build time and copy the
+file next to (or into) your binary; on Windows the DLL must be co-located with
+(or on the `PATH` of) the executable at runtime.
 
 ## Building
 
@@ -353,7 +359,7 @@ See [CLAUDE.md](CLAUDE.md) for detailed development guidelines.
 
 | omt-rs | libomt | Rust |
 |--------|--------|------|
-| 0.1.x  | latest | 1.93+ |
+| 0.1.x  | v1.0.0.16 | 1.93+ |
 
 ## Platform Support
 

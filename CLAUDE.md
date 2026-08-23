@@ -11,7 +11,8 @@ Unofficial Rust bindings for [Open Media Transport (OMT)](https://github.com/ope
 The `libomt` C shared library **must** be installed before building — the `omt-sys` build script links against it and generates bindings from its header.
 
 - Toolchain is pinned via `mise.toml` (Rust 1.93.0). Both crates use edition 2024.
-- The library is searched in `/usr/local/lib`, `/usr/lib`, `/opt/homebrew/lib`. For a non-standard location, export `LIBRARY_PATH` and `LD_LIBRARY_PATH` before building.
+- On macOS/Windows the `omt-sys` build script downloads the **pinned** prebuilt `libomt` release (SHA-256-verified) from `libomtnet/releases` into `~/.cargo/omt/<version>/` and links against it. `OMT_LIB_DIR` overrides this (offline/system install); `OMT_CACHE_DIR` relocates the cache. On Linux there is no prebuilt binary, so the library is searched in `/usr/local/lib`, `/usr/lib`, `/opt/homebrew/lib` (or `OMT_LIB_DIR`).
+- The pinned version is recorded in `omt-sys/build.rs` (`OMT_VERSION`, `OMT_ZIP_URL`, `OMT_ZIP_SHA256`). Bump all three **and** `omt-sys/libomt.h` together.
 - `omt-sys/libomt.h` is the vendored C header. It is the authoritative reference for codec names, frame semantics, and lifetimes — **consult it whenever you hit an unknown OMT concept.**
 
 ## Commands
