@@ -305,7 +305,7 @@ impl VideoFrameBuilder {
 
         Ok(OwnedMediaFrame {
             frame_type: FrameType::VIDEO,
-            codec,
+            codec: Some(codec),
             timestamp: self.timestamp,
             width: self.width,
             height: self.height,
@@ -492,7 +492,7 @@ impl AudioFrameBuilder {
 
         Ok(OwnedMediaFrame {
             frame_type: FrameType::AUDIO,
-            codec: Codec::Fpa1,
+            codec: Some(Codec::Fpa1),
             timestamp: self.timestamp,
             width: 0,
             height: 0,
@@ -579,7 +579,7 @@ impl MetadataFrameBuilder {
 
         Ok(OwnedMediaFrame {
             frame_type: FrameType::METADATA,
-            codec: Codec::Vmx1, // Codec doesn't matter for metadata
+            codec: None, // Metadata frames carry no pixel/sample format
             timestamp: self.timestamp,
             width: 0,
             height: 0,
@@ -611,7 +611,8 @@ impl Default for MetadataFrameBuilder {
 #[derive(Debug)]
 pub struct OwnedMediaFrame {
     frame_type: FrameType,
-    codec: Codec,
+    /// `None` for metadata frames, which carry no pixel/sample format.
+    codec: Option<Codec>,
     timestamp: i64,
     width: i32,
     height: i32,
@@ -655,7 +656,11 @@ impl OwnedMediaFrame {
         let mut ffi = omt_sys::OMTMediaFrame {
             Type: self.frame_type.to_ffi(),
             Timestamp: self.timestamp,
-            Codec: self.codec.to_ffi(),
+            // `OMTCodec` has no "none" member, so a metadata frame still has
+            // to put some value in this field. libomt ignores it for metadata;
+            // `VMX1` is the filler this crate has always sent, kept so the wire
+            // format does not change.
+            Codec: self.codec.unwrap_or(Codec::Vmx1).to_ffi(),
             Width: self.width,
             Height: self.height,
             Stride: self.stride,
@@ -707,8 +712,16 @@ impl OwnedMediaFrame {
         self.timestamp = timestamp;
     }
 
-    /// Returns the codec.
-    pub fn codec(&self) -> Codec {
+    /// Returns the codec, or `None` for metadata frames.
+    ///
+    /// Video and audio frames always carry a real codec. Metadata frames have
+    /// no pixel or sample format, so there is nothing meaningful to report —
+    /// this used to return the `Codec::Vmx1` placeholder written into the FFI
+    /// struct, which claimed a compressed video codec for an XML payload.
+    ///
+    /// Mirrors [`MediaFrame::codec`](crate::MediaFrame::codec), which is
+    /// likewise `Option<Codec>`.
+    pub fn codec(&self) -> Option<Codec> {
         self.codec
     }
 
@@ -722,4 +735,3 @@ impl OwnedMediaFrame {
         &mut self.data
     }
 }
-

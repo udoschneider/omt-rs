@@ -1,7 +1,7 @@
 //! Integration tests for frame builders.
 
 use omt::{
-    AudioFrameBuilder, Codec, ColorSpace, FrameRate, MetadataFrameBuilder, VideoFlags,
+    AudioFrameBuilder, Codec, ColorSpace, FrameRate, FrameType, MetadataFrameBuilder, VideoFlags,
     VideoFrameBuilder,
 };
 
@@ -21,7 +21,7 @@ fn test_video_frame_builder_basic() {
         .build()
         .expect("Failed to build video frame");
 
-    assert_eq!(frame.codec(), Codec::Uyvy);
+    assert_eq!(frame.codec(), Some(Codec::Uyvy));
     assert_eq!(frame.data().len(), width * height * 2);
 }
 
@@ -67,7 +67,7 @@ fn test_video_frame_builder_with_flags() {
         .build()
         .expect("Failed to build video frame with flags");
 
-    assert_eq!(frame.codec(), Codec::Bgra);
+    assert_eq!(frame.codec(), Some(Codec::Bgra));
 }
 
 #[test]
@@ -84,7 +84,7 @@ fn test_video_frame_builder_with_color_space() {
         .build()
         .expect("Failed to build video frame with color space");
 
-    assert_eq!(frame.codec(), Codec::Uyvy);
+    assert_eq!(frame.codec(), Some(Codec::Uyvy));
 }
 
 #[test]
@@ -118,7 +118,7 @@ fn test_video_frame_builder_with_frame_metadata() {
         .build()
         .expect("Failed to build video frame with metadata");
 
-    assert_eq!(frame.codec(), Codec::Uyvy);
+    assert_eq!(frame.codec(), Some(Codec::Uyvy));
 }
 
 #[test]
@@ -180,7 +180,7 @@ fn test_audio_frame_builder_basic() {
         .build()
         .expect("Failed to build audio frame");
 
-    assert_eq!(frame.codec(), Codec::Fpa1);
+    assert_eq!(frame.codec(), Some(Codec::Fpa1));
     assert_eq!(
         frame.data().len(),
         (samples_per_channel * channels * 4) as usize
@@ -217,7 +217,7 @@ fn test_audio_frame_builder_stereo() {
         .build()
         .expect("Failed to build stereo audio frame");
 
-    assert_eq!(frame.codec(), Codec::Fpa1);
+    assert_eq!(frame.codec(), Some(Codec::Fpa1));
 }
 
 #[test]
@@ -308,6 +308,21 @@ fn test_metadata_frame_builder_basic() {
         .expect("Failed to build metadata frame");
 
     assert!(!frame.data().is_empty());
+}
+
+// Regression: metadata frames carry no pixel or sample format, so `codec()`
+// must report `None`. It used to return the `Codec::Vmx1` placeholder the
+// builder writes into the FFI struct, claiming a compressed video codec for an
+// XML payload.
+#[test]
+fn test_metadata_frame_has_no_codec() {
+    let frame = MetadataFrameBuilder::new()
+        .metadata("<test>data</test>")
+        .build()
+        .expect("Failed to build metadata frame");
+
+    assert_eq!(frame.codec(), None);
+    assert_eq!(frame.frame_type(), FrameType::METADATA);
 }
 
 #[test]
