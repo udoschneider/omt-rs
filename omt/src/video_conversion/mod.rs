@@ -136,7 +136,14 @@ pub(crate) fn required_input_len(
         }
         // NV12: full-res Y plane (1 bpp) + interleaved UV plane of ceil(height/2) rows.
         Codec::Nv12 => {
-            if stride < width {
+            // The interleaved UV row carries `ceil(width / 2)` chroma *pairs* —
+            // `2 * ceil(width / 2)` bytes, which is *wider* than the luma row
+            // when the width is odd. A stride that cannot hold that leaves the
+            // frame no room for its own chroma, so it is rejected here rather
+            // than accepted by the gate and then refused by the converter.
+            // Identical to `stride < width` for the even widths conforming
+            // senders produce.
+            if stride < width.div_ceil(2).checked_mul(2)? {
                 return None;
             }
             let y = height.checked_mul(stride)?;
@@ -144,12 +151,19 @@ pub(crate) fn required_input_len(
             y.checked_add(uv)
         }
         // YV12: full-res Y plane (1 bpp) + two quarter-res chroma planes.
+        //
+        // Both chroma dimensions round *up*, matching the NV12 branch above and
+        // the `yuv` crate's own 4:2:0 plane check (`chroma_height =
+        // height.div_ceil(2)`, `chroma_width = width.div_ceil(2)`). Rounding
+        // down under-counts the planes for an odd height or stride, which made
+        // `from_yv12` slice them short and the conversion fail outright. For a
+        // conforming (even) frame the two roundings are identical.
         Codec::Yv12 => {
             if stride < width {
                 return None;
             }
             let y = height.checked_mul(stride)?;
-            let uv = (height / 2).checked_mul(stride / 2)?.checked_mul(2)?;
+            let uv = yv12_chroma_plane_len(height, stride)?.checked_mul(2)?;
             y.checked_add(uv)
         }
         // UYVA: packed UYVY plane (2 bpp) followed by a full-res 8-bit alpha plane.
@@ -166,6 +180,77 @@ pub(crate) fn required_input_len(
         Codec::Pa16 => p216_input_len(width, height, stride, true),
         Codec::Vmx1 | Codec::Fpa1 => None,
     }
+}
+
+/// Dense row pitch, in bytes, the `yuv` crate demands for a packed 4:2:2 plane.
+///
+/// A UYVY/YUY2 macropixel spans two pixels, so an odd width is rounded up to a
+/// whole macropixel — mirroring the `2 * (width + 1)` term in the crate's own
+/// `check_yuv_packed422`.
+fn packed422_dense_stride(width: usize) -> Option<usize> {
+    width.checked_next_multiple_of(2)?.checked_mul(2)
+}
+
+/// Presents a packed 4:2:2 plane in the exactly-dense layout the `yuv` crate
+/// requires.
+///
+/// `yuv`'s `check_yuv_packed422` validates the plane as
+/// `len == 2 * ceil_even(width) * height` and **ignores the stride it was
+/// given**, so a padded row pitch (`stride > width * 2`, which OMT senders are
+/// free to use) is rejected outright — the conversion then fails for a frame
+/// this crate's own input gate accepted. Compacting the rows first is what keeps
+/// the gate and the converter in agreement.
+///
+/// Returns a borrowed slice when the source is already dense — the common case,
+/// costing no copy — and an owned compaction otherwise. Rows shorter than the
+/// dense pitch (an odd width whose stride covers only `width * 2` bytes) are
+/// zero-filled out to the phantom half-macropixel, which lies beyond the
+/// `width` pixels the caller reads back.
+///
+/// Returns `None` if `raw` does not hold `height * stride` bytes; callers reach
+/// this only after [`required_input_len`] has guaranteed that it does.
+fn packed422_plane(
+    raw: &[u8],
+    width: usize,
+    height: usize,
+    stride: usize,
+) -> Option<std::borrow::Cow<'_, [u8]>> {
+    let dense = packed422_dense_stride(width)?;
+    let dense_len = dense.checked_mul(height)?;
+
+    if stride == dense {
+        return raw.get(..dense_len).map(std::borrow::Cow::Borrowed);
+    }
+
+    let mut out = vec![0u8; dense_len];
+    let copy = dense.min(stride);
+    for row in 0..height {
+        let src_start = row.checked_mul(stride)?;
+        let src = raw.get(src_start..src_start.checked_add(copy)?)?;
+        let dst_start = row * dense;
+        out[dst_start..dst_start + copy].copy_from_slice(src);
+    }
+    Some(std::borrow::Cow::Owned(out))
+}
+
+/// Row pitch, in bytes, of one YV12 chroma (U or V) plane.
+///
+/// 4:2:0 halves the horizontal resolution, so a chroma row is half a luma row —
+/// rounded **up**, so that a frame with an odd luma `stride` still gets the
+/// `ceil(width / 2)` bytes per row the decoder requires.
+///
+/// Shared by [`required_input_len`] and `from_yv12` so the size the gate
+/// validates and the size the converter slices can never drift apart.
+pub(crate) fn yv12_chroma_stride(stride: usize) -> usize {
+    stride.div_ceil(2)
+}
+
+/// Byte length of one YV12 chroma (U or V) plane.
+///
+/// 4:2:0 also halves the vertical resolution, again rounding up so an odd
+/// `height` keeps its final chroma row. Returns `None` on overflow.
+pub(crate) fn yv12_chroma_plane_len(height: usize, stride: usize) -> Option<usize> {
+    yv12_chroma_stride(stride).checked_mul(height.div_ceil(2))
 }
 
 /// Byte length required by the P216/PA16 layout (see [`required_input_len`]).
@@ -216,10 +301,39 @@ mod required_input_len_tests {
         assert_eq!(required_input_len(Codec::Uyvy, 4, 2, 8), Some(16));
         // NV12: y (2*8) + uv (8 * ceil(2/2)) = 16 + 8.
         assert_eq!(required_input_len(Codec::Nv12, 4, 2, 8), Some(24));
-        // YV12: y (2*8) + 2 * ((2/2) * (8/2)) = 16 + 8.
+        // YV12: y (2*8) + 2 * (ceil(2/2) * ceil(8/2)) = 16 + 8.
         assert_eq!(required_input_len(Codec::Yv12, 4, 2, 8), Some(24));
         // UYVA: uyvy (2*8) + alpha (4*2) = 16 + 8.
         assert_eq!(required_input_len(Codec::Uyva, 4, 2, 8), Some(24));
+    }
+
+    // Regression: both 4:2:0 codecs must round their chroma dimensions *up*.
+    // YV12 used to floor them, under-counting the planes for an odd height and
+    // making `yv12_to_rgb8` slice them short (the conversion then failed
+    // outright while the equivalent NV12 frame converted fine).
+    #[test]
+    fn yuv420_chroma_dimensions_round_up() {
+        // height 3 -> 2 chroma rows, not 1.
+        // NV12: y (3*4) + uv (4 * ceil(3/2)) = 12 + 8.
+        assert_eq!(required_input_len(Codec::Nv12, 4, 3, 4), Some(20));
+        // YV12: y (3*4) + 2 * (ceil(4/2) * ceil(3/2)) = 12 + 8.
+        assert_eq!(required_input_len(Codec::Yv12, 4, 3, 4), Some(20));
+
+        // An odd stride must likewise keep a full chroma row: ceil(5/2) = 3.
+        // YV12: y (2*5) + 2 * (3 * 1) = 10 + 6.
+        assert_eq!(required_input_len(Codec::Yv12, 5, 2, 5), Some(16));
+
+        // NV12's interleaved UV row needs `2 * ceil(width / 2)` bytes, which is
+        // wider than the luma row at an odd width. A stride that cannot hold it
+        // is rejected here instead of failing later inside the converter.
+        assert_eq!(required_input_len(Codec::Nv12, 3, 2, 3), None);
+        assert_eq!(required_input_len(Codec::Nv12, 1, 1, 1), None);
+        // One more byte of stride is enough, and even widths are unaffected.
+        assert_eq!(required_input_len(Codec::Nv12, 3, 2, 4), Some(12));
+        assert_eq!(required_input_len(Codec::Nv12, 4, 2, 4), Some(12));
+
+        // Even dimensions are unaffected by the rounding change.
+        assert_eq!(required_input_len(Codec::Yv12, 4, 2, 4), Some(12));
     }
 
     #[test]

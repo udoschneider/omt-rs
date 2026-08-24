@@ -12,14 +12,16 @@ pub fn yuy2_to_rgb8(
     yuv_range: YuvRange,
     yuv_matrix: YuvStandardMatrix,
 ) -> Option<Vec<RGB8>> {
-    // Slice off any trailing bytes beyond the declared plane (`height * stride`)
-    // so a larger-than-needed buffer still decodes; the `yuv` packed 4:2:2 path
-    // requires an exact-length plane. (Mirrors UYVA, which slices likewise.)
-    let plane = raw_data.get(..height.checked_mul(stride)?)?;
+    // The `yuv` packed 4:2:2 entry points require an exactly-dense plane and
+    // ignore the stride they are handed, so a padded row pitch must be compacted
+    // first — otherwise a frame this crate's own gate accepted fails to convert.
+    // Dense frames (the common case) borrow rather than copy.
+    let plane = super::packed422_plane(raw_data, width, height, stride)?;
+    let dense_stride = super::packed422_dense_stride(width)? as u32;
 
     let packed_image = YuvPackedImage {
-        yuy: plane,
-        yuy_stride: stride as u32,
+        yuy: &plane,
+        yuy_stride: dense_stride,
         width: width as u32,
         height: height as u32,
     };
@@ -47,13 +49,16 @@ pub fn yuy2_to_rgba8(
     yuv_range: YuvRange,
     yuv_matrix: YuvStandardMatrix,
 ) -> Option<Vec<RGBA8>> {
-    // See `yuy2_to_rgb8`: slice to the declared plane so trailing bytes don't
-    // trip the `yuv` exact-length packed 4:2:2 check.
-    let plane = raw_data.get(..height.checked_mul(stride)?)?;
+    // The `yuv` packed 4:2:2 entry points require an exactly-dense plane and
+    // ignore the stride they are handed, so a padded row pitch must be compacted
+    // first — otherwise a frame this crate's own gate accepted fails to convert.
+    // Dense frames (the common case) borrow rather than copy.
+    let plane = super::packed422_plane(raw_data, width, height, stride)?;
+    let dense_stride = super::packed422_dense_stride(width)? as u32;
 
     let packed_image = YuvPackedImage {
-        yuy: plane,
-        yuy_stride: stride as u32,
+        yuy: &plane,
+        yuy_stride: dense_stride,
         width: width as u32,
         height: height as u32,
     };

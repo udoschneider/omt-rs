@@ -274,3 +274,103 @@ impl<'a> MediaFrame<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::frame_builder::VideoFrameBuilder;
+    use crate::types::Codec;
+
+    /// A generously sized neutral-gray buffer, so these tests exercise the
+    /// conversion path rather than the builder's minimum-size validation.
+    fn frame_data(height: i32, stride: i32) -> Vec<u8> {
+        vec![128u8; (stride * height) as usize * 4]
+    }
+
+    // Regression: the two 4:2:0 codecs must agree on odd dimensions. YV12's
+    // input gate floored both chroma dimensions while NV12's rounded the height
+    // up, so `yv12_to_rgb8` sliced its chroma planes one row short and the
+    // `yuv` crate rejected the mismatch — an odd-height YV12 frame silently
+    // converted to `None` while the equivalent NV12 frame converted fine.
+    #[test]
+    fn odd_height_420_frames_convert() {
+        const WIDTH: i32 = 4;
+        const HEIGHT: i32 = 3;
+        const STRIDE: i32 = 4;
+
+        for codec in [Codec::Nv12, Codec::Yv12] {
+            let owned = VideoFrameBuilder::new()
+                .codec(codec)
+                .dimensions(WIDTH, HEIGHT)
+                .stride(STRIDE)
+                .data(frame_data(HEIGHT, STRIDE))
+                .build()
+                .expect("valid odd-height 4:2:0 frame");
+            let frame = owned.as_media_frame();
+
+            let pixels = frame
+                .to_rgb8()
+                .unwrap_or_else(|| panic!("{codec} odd-height frame failed to convert"));
+            assert_eq!(pixels.len(), (WIDTH * HEIGHT) as usize, "{codec}");
+        }
+    }
+
+    // Regression: a padded row pitch must still convert. The `yuv` crate's
+    // packed 4:2:2 check requires an exactly-dense plane and ignores the stride
+    // it is handed, so passing a `height * stride` slice straight through made
+    // every padded UYVY/YUY2/UYVA frame fail — silently, as a bare `None`, in
+    // the crate's own default receive format.
+    #[test]
+    fn padded_stride_packed_422_frames_convert() {
+        const WIDTH: i32 = 8;
+        const HEIGHT: i32 = 4;
+        const DENSE: i32 = WIDTH * 2;
+
+        for codec in [Codec::Uyvy, Codec::Yuy2, Codec::Uyva] {
+            for stride in [DENSE, DENSE + 4, DENSE + 32] {
+                let owned = VideoFrameBuilder::new()
+                    .codec(codec)
+                    .dimensions(WIDTH, HEIGHT)
+                    .stride(stride)
+                    .data(frame_data(HEIGHT, stride))
+                    .build()
+                    .expect("valid packed 4:2:2 frame");
+                let frame = owned.as_media_frame();
+
+                let pixels = frame.to_rgb8().unwrap_or_else(|| {
+                    panic!("{codec} at stride {stride} (dense is {DENSE}) failed to convert")
+                });
+                assert_eq!(
+                    pixels.len(),
+                    (WIDTH * HEIGHT) as usize,
+                    "{codec} @ {stride}"
+                );
+                assert!(frame.to_rgba8().is_some(), "{codec} @ {stride} rgba8");
+            }
+        }
+    }
+
+    // The even-dimension path — the only one conforming senders produce — must
+    // keep working unchanged after the rounding fix.
+    #[test]
+    fn even_dimension_420_frames_convert() {
+        const WIDTH: i32 = 4;
+        const HEIGHT: i32 = 4;
+        const STRIDE: i32 = 4;
+
+        for codec in [Codec::Nv12, Codec::Yv12] {
+            let owned = VideoFrameBuilder::new()
+                .codec(codec)
+                .dimensions(WIDTH, HEIGHT)
+                .stride(STRIDE)
+                .data(frame_data(HEIGHT, STRIDE))
+                .build()
+                .expect("valid 4:2:0 frame");
+            let frame = owned.as_media_frame();
+
+            let pixels = frame
+                .to_rgb8()
+                .unwrap_or_else(|| panic!("{codec} frame failed to convert"));
+            assert_eq!(pixels.len(), (WIDTH * HEIGHT) as usize, "{codec}");
+        }
+    }
+}

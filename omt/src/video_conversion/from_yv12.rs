@@ -1,5 +1,6 @@
 //! YV12 video frame conversion functions.
 
+use super::{yv12_chroma_plane_len, yv12_chroma_stride};
 use rgb::bytemuck;
 use rgb::*;
 use yuv::{YuvPlanarImage, YuvRange, YuvStandardMatrix};
@@ -12,12 +13,20 @@ pub fn yv12_to_rgb8(
     yuv_range: YuvRange,
     yuv_matrix: YuvStandardMatrix,
 ) -> Option<Vec<RGB8>> {
-    let y_size = height * stride;
-    let uv_size = (height / 2) * (stride / 2);
+    // Plane sizes come from the same helpers `required_input_len` validated
+    // against, so these slices are always in bounds for a frame that passed the
+    // gate. Both chroma dimensions round up, so an odd height or stride keeps
+    // its final chroma row instead of slicing the planes short.
+    let y_size = height.checked_mul(stride)?;
+    let uv_size = yv12_chroma_plane_len(height, stride)?;
+    let uv_stride = yv12_chroma_stride(stride) as u32;
 
-    let y_plane = &raw_data[0..y_size];
-    let v_plane = &raw_data[y_size..y_size + uv_size];
-    let u_plane = &raw_data[y_size + uv_size..y_size + 2 * uv_size];
+    let v_start = y_size.checked_add(uv_size)?;
+    let u_end = v_start.checked_add(uv_size)?;
+
+    let y_plane = raw_data.get(..y_size)?;
+    let v_plane = raw_data.get(y_size..v_start)?;
+    let u_plane = raw_data.get(v_start..u_end)?;
 
     let mut rgb_data = vec![RGB8::new(0, 0, 0); width * height];
     let rgb_stride = (width * 3) as u32;
@@ -26,9 +35,9 @@ pub fn yv12_to_rgb8(
         y_plane,
         y_stride: stride as u32,
         u_plane: v_plane,
-        u_stride: (stride / 2) as u32,
+        u_stride: uv_stride,
         v_plane: u_plane,
-        v_stride: (stride / 2) as u32,
+        v_stride: uv_stride,
         width: width as u32,
         height: height as u32,
     };
@@ -53,12 +62,20 @@ pub fn yv12_to_rgba8(
     yuv_range: YuvRange,
     yuv_matrix: YuvStandardMatrix,
 ) -> Option<Vec<RGBA8>> {
-    let y_size = height * stride;
-    let uv_size = (height / 2) * (stride / 2);
+    // Plane sizes come from the same helpers `required_input_len` validated
+    // against, so these slices are always in bounds for a frame that passed the
+    // gate. Both chroma dimensions round up, so an odd height or stride keeps
+    // its final chroma row instead of slicing the planes short.
+    let y_size = height.checked_mul(stride)?;
+    let uv_size = yv12_chroma_plane_len(height, stride)?;
+    let uv_stride = yv12_chroma_stride(stride) as u32;
 
-    let y_plane = &raw_data[0..y_size];
-    let v_plane = &raw_data[y_size..y_size + uv_size];
-    let u_plane = &raw_data[y_size + uv_size..y_size + 2 * uv_size];
+    let v_start = y_size.checked_add(uv_size)?;
+    let u_end = v_start.checked_add(uv_size)?;
+
+    let y_plane = raw_data.get(..y_size)?;
+    let v_plane = raw_data.get(y_size..v_start)?;
+    let u_plane = raw_data.get(v_start..u_end)?;
 
     let mut rgba_data = vec![RGBA8::new(0, 0, 0, 255); width * height];
     let rgba_stride = (width * 4) as u32;
@@ -67,9 +84,9 @@ pub fn yv12_to_rgba8(
         y_plane,
         y_stride: stride as u32,
         u_plane: v_plane,
-        u_stride: (stride / 2) as u32,
+        u_stride: uv_stride,
         v_plane: u_plane,
-        v_stride: (stride / 2) as u32,
+        v_stride: uv_stride,
         width: width as u32,
         height: height as u32,
     };

@@ -43,12 +43,14 @@ pub fn uyva_to_rgb8(
         return None;
     }
 
-    // Extract the UYVY portion (alpha is discarded for RGB output)
-    let uyvy_data = &raw_data[0..uyvy_size];
+    // See `packed422_plane`: the `yuv` packed 4:2:2 path needs an exactly-dense
+    // plane, so a padded row pitch is compacted rather than rejected.
+    let uyvy_data = super::packed422_plane(raw_data, width, height, stride)?;
+    let dense_stride = super::packed422_dense_stride(width)? as u32;
 
     let packed_image = YuvPackedImage {
-        yuy: uyvy_data,
-        yuy_stride: stride as u32,
+        yuy: &uyvy_data,
+        yuy_stride: dense_stride,
         width: width as u32,
         height: height as u32,
     };
@@ -105,13 +107,18 @@ pub fn uyva_to_rgba8(
         return None;
     }
 
-    // Extract the UYVY and alpha portions
-    let uyvy_data = &raw_data[0..uyvy_size];
+    // The alpha plane sits after the (possibly padded) UYVY plane in the source
+    // buffer, so it is located with the original stride.
     let alpha_data = &raw_data[uyvy_size..uyvy_size + alpha_size];
 
+    // See `packed422_plane`: the `yuv` packed 4:2:2 path needs an exactly-dense
+    // plane, so a padded row pitch is compacted rather than rejected.
+    let uyvy_data = super::packed422_plane(raw_data, width, height, stride)?;
+    let dense_stride = super::packed422_dense_stride(width)? as u32;
+
     let packed_image = YuvPackedImage {
-        yuy: uyvy_data,
-        yuy_stride: stride as u32,
+        yuy: &uyvy_data,
+        yuy_stride: dense_stride,
         width: width as u32,
         height: height as u32,
     };
