@@ -38,8 +38,11 @@
 //! The frame rate is intentionally limited to 1 fps to make the terminal output
 //! readable. The actual OMT stream may be running at a much higher frame rate.
 
+mod common;
+
 use clap::Parser;
-use omt::{Discovery, FrameType, PreferredVideoFormat, ReceiveFlags, Receiver};
+use common::discover_first_sender;
+use omt::{FrameType, PreferredVideoFormat, ReceiveFlags, Receiver};
 use std::time::{Duration, Instant};
 
 /// View an OMT video stream in the terminal
@@ -179,19 +182,4 @@ fn frame_to_image(frame: &omt::MediaFrame) -> Option<image::DynamicImage> {
     // Create RGB image from the converted data
     let image = image::RgbImage::from_raw(width, height, rgb_data)?;
     Some(image::DynamicImage::ImageRgb8(image))
-}
-
-fn discover_first_sender() -> Option<String> {
-    println!("Discovering OMT sources...");
-    let addresses = Discovery::get_addresses();
-
-    if !addresses.is_empty() {
-        return addresses.into_iter().next();
-    }
-
-    println!("No sources found on first attempt, retrying in 2 seconds...");
-    std::thread::sleep(Duration::from_secs(2));
-
-    let addresses = Discovery::get_addresses();
-    addresses.into_iter().next()
 }

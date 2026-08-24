@@ -33,10 +33,13 @@
 //! of UYVY frames to 128 (neutral), while preserving the Y (luma) values. This
 //! removes all color information while maintaining brightness levels.
 
+mod common;
+
 use clap::Parser;
+use common::discover_first_sender;
 use omt::{
-    Codec, ColorSpace, Discovery, FrameRate, FrameType, PreferredVideoFormat, Quality,
-    ReceiveFlags, Receiver, Sender, VideoFrameBuilder,
+    Codec, ColorSpace, FrameRate, FrameType, PreferredVideoFormat, Quality, ReceiveFlags, Receiver,
+    Sender, VideoFrameBuilder,
 };
 
 use std::time::Duration;
@@ -150,21 +153,6 @@ fn main() {
             }
         }
     }
-}
-
-fn discover_first_sender() -> Option<String> {
-    println!("Discovering OMT sources...");
-    let addresses = Discovery::get_addresses();
-
-    if !addresses.is_empty() {
-        return addresses.into_iter().next();
-    }
-
-    println!("No sources found on first attempt, retrying in 2 seconds...");
-    std::thread::sleep(Duration::from_secs(2));
-
-    let addresses = Discovery::get_addresses();
-    addresses.into_iter().next()
 }
 
 fn extract_stream_name(address: &str) -> Option<String> {
