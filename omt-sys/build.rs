@@ -127,6 +127,23 @@ fn main() {
             println!("cargo:rustc-link-search=native={}", resolved.dir.display());
             println!("cargo:rustc-link-lib={link_name}");
 
+            // On macOS the dylib's install name is `@rpath/libomt.dylib`, and
+            // the resolved directory (a cargo cache dir, or `OMT_LIB_DIR`) is
+            // not a default loader path, so an rpath entry is required at
+            // runtime.
+            //
+            // `cargo:rustc-link-arg` does *not* propagate to dependent crates:
+            // this covers `omt-sys`' own tests, examples and binaries only, and
+            // dependents must emit their own entry from `DEP_OMT_LIBDIR` (see
+            // `omt/build.rs`). `omt-sys` has no such targets today — this keeps
+            // the first one that is added working.
+            //
+            // No action is needed on Linux (system loader paths apply) or
+            // Windows (DLL located via the exe directory/PATH).
+            if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+                println!("cargo:rustc-link-arg=-Wl,-rpath,{}", resolved.dir.display());
+            }
+
             // Expose the resolved location so dependent crates (via `links`) and
             // the compiled `omt-sys` crate (for downstream app bundling) can
             // find the library.
