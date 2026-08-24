@@ -723,6 +723,3 @@ impl OwnedMediaFrame {
     }
 }
 
-// SAFETY: All data is owned and properly synchronized
-unsafe impl Send for OwnedMediaFrame {}
-unsafe impl Sync for OwnedMediaFrame {}
