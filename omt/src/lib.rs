@@ -169,6 +169,15 @@
 //!    *Partially inferred* — the weakest assumption here, and the one most worth
 //!    auditing on an upgrade; it underpins the `Sync` impls on [`Receiver`] and
 //!    [`Sender`].
+//! 7. **The discovery address list is process-global, not per-instance.**
+//!    *Documented* in `libomt.h`: the `char**` from
+//!    `omt_discovery_getaddresses` "is valid until the next call to
+//!    getaddresses". There is no handle to scope that to, so unlike the receive
+//!    path it cannot be serialized by a `&mut self` borrow;
+//!    [`Discovery::get_addresses`] holds an internal mutex across both the call
+//!    and the copying of the strings instead. This assumption is only about
+//!    *this* crate's calls — another library calling the same C function
+//!    directly in the same process would still race.
 
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]

@@ -106,24 +106,47 @@ fn test_discovery_string_cloning() {
 }
 
 /// Test that Discovery can be called from multiple threads
+///
+/// Regression test for the process-global buffer race: `libomt.h` documents the
+/// `char**` from `omt_discovery_getaddresses` as "valid until the next call to
+/// getaddresses", so without internal serialization one thread's call frees the
+/// array while another is still copying strings out of it — a use-after-free
+/// reachable from safe code. `Discovery::get_addresses` holds an internal mutex
+/// across both the call and the copy.
+///
+/// The threads start together on a barrier and hammer the call so the windows
+/// genuinely overlap; every returned string is then fully read, which is what
+/// would trip ASan/valgrind (or crash outright) if the buffer had been recycled
+/// mid-copy.
 #[cfg(not(miri))] // Skip under Miri due to threading complexity
 #[test]
 fn test_discovery_thread_safety() {
+    use std::sync::{Arc, Barrier};
     use std::thread;
 
-    let handles: Vec<_> = (0..5)
+    const THREADS: usize = 8;
+    const ITERATIONS: usize = 50;
+
+    let barrier = Arc::new(Barrier::new(THREADS));
+
+    let handles: Vec<_> = (0..THREADS)
         .map(|_| {
-            thread::spawn(|| {
-                let addresses = Discovery::get_addresses();
-                addresses.len()
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                barrier.wait();
+                for _ in 0..ITERATIONS {
+                    for address in Discovery::get_addresses() {
+                        // Touch every byte: a dangling copy would surface here.
+                        assert!(!address.is_empty());
+                        assert!(std::str::from_utf8(address.as_bytes()).is_ok());
+                    }
+                }
             })
         })
         .collect();
 
     for handle in handles {
-        let count = handle.join().expect("Thread panicked");
-        // count is usize, always >= 0, just verify threads completed
-        let _ = count;
+        handle.join().expect("Thread panicked");
     }
 }
 
