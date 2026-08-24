@@ -7,7 +7,12 @@
 use std::fmt;
 
 /// Error type for frame rate validation failures.
+///
+/// This enum is `#[non_exhaustive]`: new variants may be added in a future
+/// release without a major version bump, so downstream `match`es need a
+/// wildcard arm.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum FrameRateError {
     /// Frame rate numerator must be positive.
     InvalidNumerator(i32),

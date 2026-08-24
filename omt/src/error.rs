@@ -7,7 +7,12 @@ use std::fmt;
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Errors that can occur when using the OMT library.
+///
+/// This enum is `#[non_exhaustive]`: new variants may be added in a future
+/// release without a major version bump, so downstream `match`es need a
+/// wildcard arm.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     /// Failed to create a CString due to an interior null byte.
     #[error("string contains null byte: {0}")]
