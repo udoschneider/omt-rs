@@ -74,15 +74,24 @@ impl Codec {
         matches!(self, Codec::Vmx1)
     }
 
-    /// Returns the bits per pixel for this codec (video only).
+    /// Returns the average bits per pixel for this codec (video only).
     ///
-    /// Returns `None` for audio codecs.
+    /// The value counts *all* planes averaged over pixels, matching the
+    /// convention used for buffer sizing: chroma subsampling lowers the
+    /// average (4:2:0 NV12/YV12 → 12, 4:2:2 UYVY/YUY2 → 16), and alpha
+    /// planes raise it by their per-pixel contribution (UYVA → 24,
+    /// P216 → 32, PA16 → 48).
+    ///
+    /// Returns `None` for audio codecs and compressed codecs (whose size is
+    /// variable).
     pub fn bits_per_pixel(&self) -> Option<u32> {
         match self {
-            Codec::Uyvy | Codec::Yuy2 | Codec::Uyva => Some(16),
+            Codec::Uyvy | Codec::Yuy2 => Some(16),
             Codec::Bgra => Some(32),
             Codec::Nv12 | Codec::Yv12 => Some(12), // 4:2:0 subsampling
-            Codec::P216 | Codec::Pa16 => Some(32), // 16-bit per component
+            Codec::Uyva => Some(24),               // UYVY + 8-bit alpha plane
+            Codec::P216 => Some(32),               // 16-bit 4:2:2 averaged over pixels
+            Codec::Pa16 => Some(48),               // P216 + 16-bit alpha plane
             Codec::Vmx1 => None,                   // Compressed, variable
             Codec::Fpa1 => None,                   // Audio codec
         }
@@ -137,8 +146,14 @@ mod tests {
     #[test]
     fn test_bits_per_pixel() {
         assert_eq!(Codec::Uyvy.bits_per_pixel(), Some(16));
+        assert_eq!(Codec::Yuy2.bits_per_pixel(), Some(16));
         assert_eq!(Codec::Bgra.bits_per_pixel(), Some(32));
         assert_eq!(Codec::Nv12.bits_per_pixel(), Some(12));
+        assert_eq!(Codec::Yv12.bits_per_pixel(), Some(12));
+        assert_eq!(Codec::Uyva.bits_per_pixel(), Some(24));
+        assert_eq!(Codec::P216.bits_per_pixel(), Some(32));
+        assert_eq!(Codec::Pa16.bits_per_pixel(), Some(48));
+        assert_eq!(Codec::Vmx1.bits_per_pixel(), None);
         assert_eq!(Codec::Fpa1.bits_per_pixel(), None);
     }
 
