@@ -201,7 +201,7 @@ fn uyvy_to_grayscale(uyvy_data: &[u8], width: i32, height: i32, stride: i32) -> 
             let row = &uyvy_data[row_start..row_end];
 
             // Process UYVY macropixels (4 bytes at a time)
-            for chunk in row.chunks_exact(4) {
+            for chunk in row.as_chunks::<4>().0 {
                 output.push(128); // U = 128 (neutral)
                 output.push(chunk[1]); // Y0 (preserve luma)
                 output.push(128); // V = 128 (neutral)

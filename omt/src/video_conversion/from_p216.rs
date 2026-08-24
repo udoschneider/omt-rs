@@ -131,7 +131,9 @@ pub fn p216_to_rgb16(
 
     // Convert u16 slice to RGB16 vec
     let rgb16_data: Vec<RGB16> = rgb_data
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|chunk| RGB16::new(chunk[0], chunk[1], chunk[2]))
         .collect();
 
@@ -227,7 +229,9 @@ pub fn p216_to_rgba16(
 
     // Convert u16 slice to RGBA16 vec
     let rgba16_data: Vec<RGBA16> = rgba_data
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|chunk| RGBA16::new(chunk[0], chunk[1], chunk[2], chunk[3]))
         .collect();
 
