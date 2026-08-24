@@ -1,6 +1,9 @@
 [workspace]
 resolver = "3"
 members = ["omt","omt-sys"]
+# `fuzz` is a stand-alone crate: `cargo fuzz` needs nightly, the workspace is
+# pinned to stable. Excluding it keeps root builds from reaching for it.
+exclude = ["fuzz"]
 
 [workspace.package]
 authors = ["Udo Schneider <Udo.Schneider@homeaddress.de>"]

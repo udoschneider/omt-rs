@@ -1,0 +1,38 @@
+# Fuzzing harness for the `omt` crate.
+#
+# Deliberately NOT a workspace member (see the `[workspace]` table below and the
+# `exclude` in the root manifest): `cargo fuzz` requires a nightly toolchain,
+# while the workspace is pinned to stable via `mise.toml`. Keeping it separate
+# means a plain `cargo build`/`cargo test` at the root never tries to build it.
+#
+#   cargo install cargo-fuzz
+#   cargo +nightly fuzz run media_frame
+#
+# The invariants the target asserts are also swept deterministically by
+# `omt::fuzzing`'s own unit tests, which do run on stable in ordinary CI.
+
+[package]
+name = "omt-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.omt]
+path = "../omt"
+features = ["unstable-fuzzing"]
+
+[[bin]]
+name = "media_frame"
+path = "fuzz_targets/media_frame.rs"
+test = false
+doc = false
+bench = false
+
+# Stand-alone workspace: keeps this crate out of the root workspace entirely.
+[workspace]

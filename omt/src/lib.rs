@@ -186,6 +186,15 @@ mod c_string;
 mod discovery;
 mod error;
 mod frame;
+
+/// Fuzzing hooks for this crate's untrusted-input handling.
+///
+/// Hidden, semver-exempt, and gated behind the off-by-default
+/// `unstable-fuzzing` feature. See the module docs; do not depend on it.
+#[cfg(any(test, feature = "unstable-fuzzing"))]
+#[doc(hidden)]
+pub mod fuzzing;
+
 mod frame_builder;
 mod receiver;
 mod sender;

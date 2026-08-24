@@ -298,6 +298,7 @@ omt-rs/
 │   ├── docs/
 │   │   └── METADATA.md    # Metadata specification
 │   └── README.md
+├── fuzz/                  # cargo-fuzz harness (outside the workspace)
 ├── Cargo.toml             # Workspace configuration
 └── README.md              # This file
 ```
@@ -317,6 +318,21 @@ cargo test -p omt-sys
 # Run with output
 cargo test -- --nocapture
 ```
+
+### Fuzzing
+
+Frame headers arrive from the network and are not trusted. Their handling has a
+dedicated harness, swept deterministically on every `cargo test` and available
+for deeper runs under `cargo-fuzz`:
+
+```bash
+cargo install cargo-fuzz
+cargo +nightly fuzz run media_frame
+```
+
+The `fuzz/` crate sits outside the workspace (cargo-fuzz needs nightly; the
+workspace is pinned to stable) and keeps its lockfile pinned to the workspace's
+dependency versions, so it fuzzes the code that actually ships.
 
 ### Code Quality
 
