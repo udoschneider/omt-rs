@@ -9,6 +9,25 @@ use crate::frame::MediaFrame;
 use crate::types::{Codec, ColorSpace, FrameRate, FrameType, VideoFlags};
 use std::ffi::CString;
 
+/// Rejects a payload the FFI struct cannot describe.
+///
+/// `OMTMediaFrame.DataLength` is an `int`, so `OwnedMediaFrame::as_media_frame`
+/// has to narrow the buffer length to `i32`. Refusing an oversized buffer here
+/// keeps that narrowing lossless, rather than letting it wrap to a bogus (or
+/// negative) length that would mis-describe the payload to libomt.
+fn check_data_length(len: usize) -> Result<()> {
+    if len > i32::MAX as usize {
+        return Err(Error::InvalidParameter {
+            parameter: "data".to_string(),
+            reason: format!(
+                "length {len} exceeds the maximum of {} bytes an OMT frame can describe",
+                i32::MAX
+            ),
+        });
+    }
+    Ok(())
+}
+
 /// Bits per pixel of the codec's primary plane — the plane a video frame's
 /// `stride` describes.
 ///
@@ -174,6 +193,7 @@ impl VideoFrameBuilder {
     /// - Data is empty
     /// - The stride is narrower than one row of the codec's primary plane
     /// - Data is shorter than the codec requires for the dimensions and stride
+    /// - Data is longer than `i32::MAX` bytes (the FFI frame-length limit)
     /// - Frame metadata exceeds 65535 bytes
     pub fn build(self) -> Result<OwnedMediaFrame> {
         let codec = self.codec.ok_or(Error::InvalidParameter {
@@ -195,12 +215,18 @@ impl VideoFrameBuilder {
             });
         }
 
+        check_data_length(self.data.len())?;
+
         // Calculate stride if not specified. `stride` describes the primary
-        // plane only, so it follows from that plane's bits per pixel.
+        // plane only, so it follows from that plane's bits per pixel. The
+        // multiplication saturates rather than wrapping: `width` is caller-
+        // supplied, and an overflowing product must not panic (no-panics rule)
+        // nor wrap into a plausible-looking small stride. A saturated stride is
+        // rejected by the size check below.
         let stride = self
             .stride
             .unwrap_or_else(|| match primary_plane_bits_per_pixel(codec) {
-                Some(bits) => self.width * bits as i32 / 8,
+                Some(bits) => self.width.saturating_mul(bits as i32) / 8,
                 None => self.width,
             });
 
@@ -399,6 +425,7 @@ impl AudioFrameBuilder {
     /// - Channels is zero or exceeds 32
     /// - Samples per channel is zero
     /// - Data is empty or size doesn't match samples_per_channel * channels * 4
+    /// - Data is longer than `i32::MAX` bytes (the FFI frame-length limit)
     /// - Frame metadata exceeds 65535 bytes
     pub fn build(self) -> Result<OwnedMediaFrame> {
         if self.sample_rate <= 0 {
@@ -421,6 +448,8 @@ impl AudioFrameBuilder {
                 reason: "samples per channel must be greater than zero".to_string(),
             });
         }
+
+        check_data_length(self.data.len())?;
 
         // Compute in `usize` with checked multiplication: doing it in `i32`
         // (`samples_per_channel * channels * 4`) can overflow and wrap, which
@@ -533,7 +562,8 @@ impl MetadataFrameBuilder {
     ///
     /// # Errors
     ///
-    /// Returns an error if the metadata is empty.
+    /// Returns an error if the metadata is empty, contains an interior null
+    /// byte, or is longer than `i32::MAX` bytes (the FFI frame-length limit).
     pub fn build(self) -> Result<OwnedMediaFrame> {
         if self.metadata.is_empty() {
             return Err(Error::InvalidParameter {
@@ -544,6 +574,8 @@ impl MetadataFrameBuilder {
 
         let c_string = CString::new(self.metadata)?;
         let data = c_string.as_bytes_with_nul().to_vec();
+
+        check_data_length(data.len())?;
 
         Ok(OwnedMediaFrame {
             frame_type: FrameType::METADATA,
@@ -636,7 +668,11 @@ impl OwnedMediaFrame {
             Channels: self.channels,
             SamplesPerChannel: self.samples_per_channel,
             Data: self.data.as_ptr() as *mut _,
-            DataLength: self.data.len() as i32,
+            // Lossless: every builder runs `check_data_length`, so the buffer
+            // is never longer than `i32::MAX`. The saturating fallback keeps
+            // this total (no unwrap) without silently wrapping to a negative
+            // length if that invariant were ever broken.
+            DataLength: i32::try_from(self.data.len()).unwrap_or(i32::MAX),
             CompressedData: std::ptr::null_mut(),
             CompressedLength: 0,
             FrameMetadata: std::ptr::null_mut(),
@@ -644,8 +680,10 @@ impl OwnedMediaFrame {
         };
 
         if let Some(ref metadata) = self.frame_metadata {
+            // Lossless: the builders cap frame metadata at 65535 bytes.
             ffi.FrameMetadata = metadata.as_ptr() as *mut _;
-            ffi.FrameMetadataLength = metadata.as_bytes_with_nul().len() as i32;
+            ffi.FrameMetadataLength =
+                i32::try_from(metadata.as_bytes_with_nul().len()).unwrap_or(i32::MAX);
         }
 
         // SAFETY: We're creating a MediaFrame from a valid FFI structure.
