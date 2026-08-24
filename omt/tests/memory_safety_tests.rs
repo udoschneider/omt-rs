@@ -435,7 +435,9 @@ fn test_stride_calculation() {
 fn test_explicit_stride() {
     let width = 1920;
     let height = 1080;
-    let stride = 2048; // Padded stride
+    // Padded stride: UYVY needs 1920*2 = 3840 bytes per row, padded up to a
+    // 4096-byte alignment.
+    let stride = 4096;
 
     let owned_frame = VideoFrameBuilder::new()
         .codec(Codec::Uyvy)

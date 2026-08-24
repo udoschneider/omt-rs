@@ -410,3 +410,129 @@ fn test_as_media_frame_conversion() {
     assert_eq!(media_frame.height(), height as i32);
     assert_eq!(media_frame.data().len(), width * height * 2);
 }
+
+#[test]
+fn test_video_frame_undersized_data_rejected() {
+    // 4x4 UYVY needs 4*4*2 = 32 bytes; one byte short must be rejected.
+    let result = VideoFrameBuilder::new()
+        .codec(Codec::Uyvy)
+        .dimensions(4, 4)
+        .data(vec![0u8; 31])
+        .build();
+
+    assert!(result.is_err(), "undersized UYVY data should be rejected");
+}
+
+#[test]
+fn test_video_frame_exact_minimum_data_accepted() {
+    // The exact codec minimum (32 bytes for 4x4 UYVY) builds fine.
+    let frame = VideoFrameBuilder::new()
+        .codec(Codec::Uyvy)
+        .dimensions(4, 4)
+        .data(vec![0u8; 32])
+        .build()
+        .expect("exact minimum UYVY size should be accepted");
+
+    assert_eq!(frame.data().len(), 32);
+}
+
+#[test]
+fn test_video_frame_planar_subsampling_minimum() {
+    // NV12 averages 12 bits per pixel: 4x4 needs 4*4*12/8 = 24 bytes.
+    let ok = VideoFrameBuilder::new()
+        .codec(Codec::Nv12)
+        .dimensions(4, 4)
+        .data(vec![0u8; 24])
+        .build();
+    assert!(ok.is_ok(), "exact NV12 minimum should be accepted");
+
+    let short = VideoFrameBuilder::new()
+        .codec(Codec::Nv12)
+        .dimensions(4, 4)
+        .data(vec![0u8; 23])
+        .build();
+    assert!(short.is_err(), "undersized NV12 data should be rejected");
+}
+
+#[test]
+fn test_video_frame_compressed_codec_skips_size_check() {
+    // Compressed payloads have a variable size unrelated to the geometry, so
+    // no minimum applies.
+    let frame = VideoFrameBuilder::new()
+        .codec(Codec::Vmx1)
+        .dimensions(1920, 1080)
+        .data(vec![1, 2, 3])
+        .build()
+        .expect("compressed frames should not be size-checked");
+
+    assert_eq!(frame.data().len(), 3);
+}
+
+#[test]
+fn test_video_frame_padded_stride_requires_padded_data() {
+    // With an explicitly padded stride the buffer must cover `stride * height`,
+    // not just the unpadded `width * height * 2` a UYVY frame would otherwise need.
+    let result = VideoFrameBuilder::new()
+        .codec(Codec::Uyvy)
+        .dimensions(64, 4)
+        .stride(256) // 64*2 = 128 bytes per row, padded to 256
+        .data(vec![0u8; 64 * 4 * 2])
+        .build();
+
+    assert!(
+        result.is_err(),
+        "data sized for the unpadded row must be rejected once a padded stride is declared"
+    );
+
+    let frame = VideoFrameBuilder::new()
+        .codec(Codec::Uyvy)
+        .dimensions(64, 4)
+        .stride(256)
+        .data(vec![0u8; 256 * 4])
+        .build()
+        .expect("data covering the padded stride should be accepted");
+
+    assert_eq!(frame.as_media_frame().stride(), 256);
+}
+
+#[test]
+fn test_video_frame_stride_below_row_width_rejected() {
+    // A stride narrower than one row cannot describe the frame at all.
+    let result = VideoFrameBuilder::new()
+        .codec(Codec::Uyvy)
+        .dimensions(1920, 1080)
+        .stride(2048) // 1920*2 = 3840 bytes are needed per row
+        .data(vec![0u8; 1920 * 1080 * 2])
+        .build();
+
+    assert!(
+        result.is_err(),
+        "stride below the row width should be rejected"
+    );
+}
+
+#[test]
+fn test_video_frame_planar_padded_stride_adds_chroma() {
+    // NV12's stride covers the 8-bit luma plane; the subsampled chroma plane
+    // adds an unpadded 4 bits per pixel on top.
+    let width = 64;
+    let height = 4;
+    let stride = 128; // luma padded to 2x its natural width
+    let required = (stride * height) + (width * height / 2);
+
+    let short = VideoFrameBuilder::new()
+        .codec(Codec::Nv12)
+        .dimensions(width, height)
+        .stride(stride)
+        .data(vec![0u8; (required - 1) as usize])
+        .build();
+    assert!(short.is_err(), "padded NV12 must still account for chroma");
+
+    let ok = VideoFrameBuilder::new()
+        .codec(Codec::Nv12)
+        .dimensions(width, height)
+        .stride(stride)
+        .data(vec![0u8; required as usize])
+        .build();
+    assert!(ok.is_ok(), "exact padded NV12 size should be accepted");
+}

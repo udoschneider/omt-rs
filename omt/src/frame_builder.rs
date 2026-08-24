@@ -9,6 +9,25 @@ use crate::frame::MediaFrame;
 use crate::types::{Codec, ColorSpace, FrameRate, FrameType, VideoFlags};
 use std::ffi::CString;
 
+/// Bits per pixel of the codec's primary plane — the plane a video frame's
+/// `stride` describes.
+///
+/// For packed codecs this equals [`Codec::bits_per_pixel`]; for planar ones it
+/// covers only the first (luma) plane, the chroma and alpha planes making up
+/// the difference. Returns `None` for codecs without a fixed pixel layout
+/// (compressed video, audio).
+fn primary_plane_bits_per_pixel(codec: Codec) -> Option<u32> {
+    match codec {
+        Codec::Uyvy | Codec::Yuy2 | Codec::Uyva => Some(16),
+        Codec::Bgra => Some(32),
+        // 16-bit luma plane; chroma (and alpha for PA16) follow.
+        Codec::P216 | Codec::Pa16 => Some(16),
+        // 8-bit luma plane; subsampled chroma follows.
+        Codec::Nv12 | Codec::Yv12 => Some(8),
+        Codec::Vmx1 | Codec::Fpa1 => None,
+    }
+}
+
 /// Builder for creating video frames.
 ///
 /// # Examples
@@ -153,6 +172,8 @@ impl VideoFrameBuilder {
     /// - No codec is specified
     /// - Width or height is zero
     /// - Data is empty
+    /// - The stride is narrower than one row of the codec's primary plane
+    /// - Data is shorter than the codec requires for the dimensions and stride
     /// - Frame metadata exceeds 65535 bytes
     pub fn build(self) -> Result<OwnedMediaFrame> {
         let codec = self.codec.ok_or(Error::InvalidParameter {
@@ -174,13 +195,72 @@ impl VideoFrameBuilder {
             });
         }
 
-        // Calculate stride if not specified
-        let stride = self.stride.unwrap_or_else(|| match codec {
-            Codec::Uyvy | Codec::Yuy2 | Codec::Uyva => self.width * 2,
-            Codec::Bgra => self.width * 4,
-            Codec::P216 | Codec::Pa16 => self.width * 2,
-            _ => self.width,
-        });
+        // Calculate stride if not specified. `stride` describes the primary
+        // plane only, so it follows from that plane's bits per pixel.
+        let stride = self
+            .stride
+            .unwrap_or_else(|| match primary_plane_bits_per_pixel(codec) {
+                Some(bits) => self.width * bits as i32 / 8,
+                None => self.width,
+            });
+
+        // Reject geometry the buffer cannot back: an undersized frame would
+        // otherwise read out of bounds inside libomt. The primary plane
+        // occupies `stride * height` bytes, so an explicitly padded stride is
+        // accounted for; any further planes are assumed unpadded, which keeps
+        // this a hard lower bound rather than an exact size.
+        if let (Some(total_bits), Some(plane_bits)) =
+            (codec.bits_per_pixel(), primary_plane_bits_per_pixel(codec))
+        {
+            let min_stride = self.width.saturating_mul(plane_bits as i32) / 8;
+            if stride < min_stride {
+                return Err(Error::InvalidParameter {
+                    parameter: "stride".to_string(),
+                    reason: format!(
+                        "{} is below the {} bytes per row a {}-wide {} plane needs",
+                        stride,
+                        min_stride,
+                        self.width,
+                        codec.fourcc()
+                    ),
+                });
+            }
+
+            let required = (|| {
+                let height = usize::try_from(self.height).ok()?;
+                let primary = usize::try_from(stride).ok()?.checked_mul(height)?;
+                let pixels = usize::try_from(self.width).ok()?.checked_mul(height)?;
+                let extra = pixels
+                    .checked_mul((total_bits - plane_bits) as usize)?
+                    .div_ceil(8);
+                primary.checked_add(extra)
+            })();
+
+            let Some(required) = required else {
+                return Err(Error::InvalidParameter {
+                    parameter: "dimensions".to_string(),
+                    reason: format!(
+                        "{}x{} at stride {} overflows the addressable frame size",
+                        self.width, self.height, stride
+                    ),
+                });
+            };
+
+            if self.data.len() < required {
+                return Err(Error::InvalidParameter {
+                    parameter: "data".to_string(),
+                    reason: format!(
+                        "length {} is below the {} bytes required for {}x{} {} at stride {}",
+                        self.data.len(),
+                        required,
+                        self.width,
+                        self.height,
+                        codec.fourcc(),
+                        stride
+                    ),
+                });
+            }
+        }
 
         let frame_metadata_cstring = if let Some(ref metadata) = self.frame_metadata {
             if metadata.len() > 65535 {
