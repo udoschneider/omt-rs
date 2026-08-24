@@ -145,7 +145,7 @@ impl<'a> MediaFrame<'a> {
 
     /// Returns the frame type.
     pub fn frame_type(&self) -> FrameType {
-        FrameType::from_ffi(self.ffi.Type).unwrap_or(FrameType::NONE)
+        FrameType::from_ffi(self.ffi.Type)
     }
 
     /// Returns the timestamp (where 1 second = 10,000,000 units).
