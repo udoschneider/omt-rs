@@ -344,9 +344,11 @@ impl<'a> Clone for MediaFrame<'a> {
             owned.compressed = Some(buf);
         }
 
-        // Deep copy the frame metadata string (re-appending the null terminator).
-        if !self.ffi.FrameMetadata.is_null() && self.ffi.FrameMetadataLength > 0 {
-            let mut bytes = self.frame_metadata().as_bytes().to_vec();
+        // Deep copy the frame metadata buffer. Copy raw bytes rather than going
+        // through the lossy string accessors, which would silently replace
+        // present-but-invalid-UTF-8 metadata with an empty string.
+        if let Some(metadata) = self.frame_metadata_bytes() {
+            let mut bytes = metadata.to_vec();
             bytes.push(0); // Null terminator
             let len = bytes.len() as i32;
             let mut buf = bytes.into_boxed_slice();
@@ -450,6 +452,17 @@ mod tests {
         // 0xFF, 0xFE is not valid UTF-8; the 0x00 is the null terminator.
         let bytes: [u8; 3] = [0xFF, 0xFE, 0x00];
 
+        let frame = fabricated_frame_with_raw_metadata(&bytes);
+
+        assert_eq!(frame.frame_metadata_bytes(), Some([0xFF, 0xFE].as_slice()));
+        assert!(matches!(frame.try_frame_metadata(), Some(Err(_))));
+        assert_eq!(frame.frame_metadata(), "");
+    }
+
+    /// Builds a borrowed video frame whose metadata buffer points at `bytes`
+    /// (raw, arbitrary content). Mirrors how `OwnedMediaFrame::as_media_frame`
+    /// wires up the FFI pointers.
+    fn fabricated_frame_with_raw_metadata(bytes: &[u8]) -> MediaFrame<'_> {
         let ffi = omt_sys::OMTMediaFrame {
             Type: FrameType::VIDEO.to_ffi(),
             Timestamp: -1,
@@ -474,12 +487,37 @@ mod tests {
         };
 
         // SAFETY: `ffi` is fully initialized and its `FrameMetadata` pointer aims
-        // at `bytes`, which outlives `frame` (same stack scope). The frame's
-        // lifetime is tied to that borrow, so it cannot dangle.
-        let frame = unsafe { MediaFrame::from_owned_ffi(ffi) };
+        // at `bytes`, which outlives the returned frame (caller keeps the buffer
+        // alive in the same scope). The frame's lifetime is tied to that borrow,
+        // so it cannot dangle.
+        unsafe { MediaFrame::from_owned_ffi(ffi) }
+    }
 
-        assert_eq!(frame.frame_metadata_bytes(), Some([0xFF, 0xFE].as_slice()));
-        assert!(matches!(frame.try_frame_metadata(), Some(Err(_))));
-        assert_eq!(frame.frame_metadata(), "");
+    // Regression: cloning must deep-copy the metadata payload byte-for-byte,
+    // including present-but-invalid-UTF-8 buffers. It previously went through
+    // the lossy string accessor, silently replacing such payloads with "".
+    #[test]
+    fn clone_preserves_invalid_utf8_metadata() {
+        let source_bytes: [u8; 3] = [0xFF, 0xFE, 0x00];
+        let frame = fabricated_frame_with_raw_metadata(&source_bytes);
+        let cloned = frame.clone();
+
+        assert_eq!(cloned.frame_metadata_bytes(), Some([0xFF, 0xFE].as_slice()));
+        assert!(matches!(cloned.try_frame_metadata(), Some(Err(_))));
+    }
+
+    // Regression: a clone must own fresh copies of every buffer rather than
+    // aliasing the source's memory.
+    #[test]
+    fn clone_deep_copies_all_buffers() {
+        let owned = video_builder(Some("<tally on=\"1\"/>")).build().unwrap();
+        let frame = owned.as_media_frame();
+        let cloned = frame.clone();
+
+        assert_eq!(cloned.frame_type(), FrameType::VIDEO);
+        assert_eq!(cloned.data(), frame.data());
+        // Distinct allocations prove this is a real deep copy, not an alias.
+        assert_ne!(cloned.data().as_ptr(), frame.data().as_ptr());
+        assert_eq!(cloned.frame_metadata(), "<tally on=\"1\"/>");
     }
 }
