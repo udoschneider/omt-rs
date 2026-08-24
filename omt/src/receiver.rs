@@ -318,7 +318,6 @@ impl Receiver {
     /// ```no_run
     /// # use omt::{Receiver, FrameType, PreferredVideoFormat, ReceiveFlags, Tally};
     /// # let receiver = Receiver::new("omt://localhost:6400", FrameType::VIDEO, PreferredVideoFormat::Uyvy, ReceiveFlags::NONE)?;
-    /// let tally = Tally::new(true, false);
     /// receiver.set_tally(Tally::program_only());
     /// # Ok::<(), omt::Error>(())
     /// ```

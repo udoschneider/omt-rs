@@ -256,7 +256,7 @@ See [METADATA.md](omt-sys/docs/METADATA.md) for specifications.
 │          omt crate                  │
 │  (High-level safe Rust API)         │
 │  - Sender, Receiver                 │
-│  - VideoFrame, AudioFrame           │
+│  - MediaFrame, OwnedMediaFrame      │
 │  - Discovery, Settings              │
 │  - Frame builders                   │
 └─────────────────┬───────────────────┘

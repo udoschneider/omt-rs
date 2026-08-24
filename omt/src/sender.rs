@@ -151,14 +151,22 @@ impl Sender {
     ///
     /// Supports video, audio, and metadata frames.
     ///
+    /// Returns `Ok(true)` if the frame was accepted for sending, `Ok(false)`
+    /// otherwise.
+    ///
     /// # Examples
     ///
     /// ```no_run
-    /// # use omt::{Sender, Quality};
+    /// # use omt::{Sender, Quality, VideoFrameBuilder, Codec};
     /// # let sender = Sender::new("My Camera", Quality::High)?;
-    /// // Send a frame
-    /// // let frame = ...; // Create frame
-    /// // sender.send(&frame)?;
+    /// // Build an owned frame and broadcast it
+    /// let frame = VideoFrameBuilder::new()
+    ///     .codec(Codec::Uyvy)
+    ///     .dimensions(1920, 1080)
+    ///     .data(vec![0u8; 1920 * 1080 * 2])
+    ///     .build()?;
+    ///
+    /// sender.send(&frame.as_media_frame())?;
     /// # Ok::<(), omt::Error>(())
     /// ```
     pub fn send(&self, frame: &MediaFrame<'_>) -> Result<bool> {

@@ -180,9 +180,13 @@ The underlying C library reuses internal frame buffers. When you call receive ag
 
 ### Frame Types
 
-- **`VideoFrame`**: Video frames with dimensions, frame rate, codec info
-- **`AudioFrame`**: Audio frames with sample rate, channels, planar f32 data
-- **`MetadataFrame`**: UTF-8 encoded XML metadata
+- **`MediaFrame`**: A single video, audio, or metadata frame (distinguished at
+  runtime via `frame_type()`), borrowed from the receiver or an owned buffer.
+  Video-specific methods include `to_rgb8()`/`to_rgba8()` conversion; audio
+  frames expose `as_f32_planar()`.
+- **`OwnedMediaFrame`**: A frame that owns its data, created via the frame
+  builders (`VideoFrameBuilder`, `AudioFrameBuilder`, `MetadataFrameBuilder`)
+  for sending.
 
 ### Codecs
 
@@ -384,7 +388,7 @@ cargo run --example rebroadcast_bw -- "omt://hostname:6400"
 │          omt crate                  │
 │  (Safe, high-level Rust API)       │
 │  - Sender, Receiver                 │
-│  - VideoFrame, AudioFrame           │
+│  - MediaFrame, OwnedMediaFrame      │
 │  - Discovery, Settings              │
 └─────────────────┬───────────────────┘
                   │
