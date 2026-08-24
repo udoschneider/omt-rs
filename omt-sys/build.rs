@@ -289,31 +289,70 @@ fn ensure_prebuilt(prebuilt: Prebuilt, dest: &Path) -> Result<(), String> {
         .ok_or_else(|| "prebuilt cache dir has no parent".to_string())?;
     let zip_path = root.join("omt.zip");
 
+    // Declaring the archive as an input makes cargo re-run this script whenever
+    // it changes *or goes missing*. That is what lets the checksum failure below
+    // heal on the very next `cargo build`: the bad archive is deleted, so the
+    // declared path no longer exists and cargo cannot skip the re-run.
+    println!("cargo:rerun-if-changed={}", zip_path.display());
+
     if !zip_path.exists() {
         download_zip(&zip_path)?;
     }
-    verify_checksum(&zip_path)?;
+    // A cached archive that fails verification is deleted, not left in place:
+    // otherwise every subsequent build re-reads the same bad file, fails
+    // identically, and silently degrades to the "system libomt" fallback. The
+    // next build re-downloads and self-heals instead.
+    if let Err(err) = verify_checksum(&zip_path) {
+        let _ = fs::remove_file(&zip_path);
+        return Err(format!(
+            "{err} (removed; the next build will re-download it)"
+        ));
+    }
 
     // Extract into a staging dir, then atomically move into place so a
-    // concurrent build never observes a half-extracted cache.
-    let staging = root.join(format!(".{}-staging", prebuilt.cache_dir()));
+    // concurrent build never observes a half-extracted cache. The staging name
+    // is per-process: the cache root is shared across *cargo invocations*
+    // (`$CARGO_HOME/omt/<version>`), so two builds racing on a cold cache — say
+    // `cargo build` alongside rust-analyzer — would otherwise clear and rename
+    // each other's staging directory out from under themselves.
+    let staging = root.join(format!(
+        ".{}-staging-{}",
+        prebuilt.cache_dir(),
+        std::process::id()
+    ));
     if staging.exists() {
         let _ = fs::remove_dir_all(&staging);
     }
     fs::create_dir_all(&staging)
         .map_err(|e| format!("could not create staging dir {}: {e}", staging.display()))?;
 
-    extract_files(&zip_path, &staging, prebuilt)?;
+    let staged = extract_files(&zip_path, &staging, prebuilt).and_then(|()| {
+        // The archive's header must match the vendored one, otherwise the
+        // bindings and the binary describe different ABIs.
+        verify_header(&staging.join("libomt.h"))
+    });
+    if let Err(err) = staged {
+        // Never leave a half-extracted staging directory behind: it is named
+        // per-process, so nothing would ever clean it up.
+        let _ = fs::remove_dir_all(&staging);
+        return Err(err);
+    }
 
-    // The archive's header must match the vendored one, otherwise the bindings
-    // and the binary describe different ABIs.
-    verify_header(&staging.join("libomt.h"))?;
-
+    // Publish. If a concurrent build won the race and already populated `dest`,
+    // keep what is there and discard our staging: the content is byte-identical
+    // (same pinned, checksum-verified archive), and clearing `dest` could pull
+    // the library out from under a build that is already linking against it.
+    if find_lib_in(dest).is_some() {
+        let _ = fs::remove_dir_all(&staging);
+        return Ok(());
+    }
     if dest.exists() {
         fs::remove_dir_all(dest).map_err(|e| format!("could not clear {}: {e}", dest.display()))?;
     }
-    fs::rename(&staging, dest)
-        .map_err(|e| format!("could not move {} into place: {e}", dest.display()))?;
+    fs::rename(&staging, dest).map_err(|e| {
+        let _ = fs::remove_dir_all(&staging);
+        format!("could not move {} into place: {e}", dest.display())
+    })?;
 
     Ok(())
 }
