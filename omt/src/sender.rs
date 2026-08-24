@@ -143,15 +143,8 @@ impl Sender {
             )
         };
 
-        if len <= 0 {
-            return Ok(String::new());
-        }
-
-        // Clamp to the buffer we handed the C call: a contract-violating length
-        // larger than `MAX_STRING_LENGTH` must not panic the slice (no-panics rule).
-        let len = (len as usize).min(buffer.len());
-        let bytes: Vec<u8> = buffer[..len].iter().map(|&b| b as u8).collect();
-        String::from_utf8(bytes).map_err(|_| Error::InvalidUtf8)
+        // The reported length includes the null terminator; `from_buffer` trims it.
+        crate::c_string::from_buffer(&buffer, len)
     }
 
     /// Sends a frame to all connected receivers.

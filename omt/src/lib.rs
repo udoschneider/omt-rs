@@ -173,6 +173,7 @@
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]
 
+mod c_string;
 mod discovery;
 mod error;
 mod frame;

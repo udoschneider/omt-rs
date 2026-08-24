@@ -7,7 +7,7 @@
 //! variable prior to calling any OMT functions.
 
 use crate::MAX_STRING_LENGTH;
-use crate::error::{Error, Result};
+use crate::error::Result;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::sync::RwLock;
@@ -73,16 +73,8 @@ impl Settings {
             )
         };
 
-        if len <= 0 {
-            return Ok(String::new());
-        }
-
-        // Clamp to the buffer we handed the C call: a contract-violating length
-        // larger than `MAX_STRING_LENGTH` must not panic the slice (no-panics rule).
-        let len = (len as usize).min(buffer.len());
-        let bytes: Vec<u8> = buffer[..len].iter().map(|&b| b as u8).collect();
-
-        String::from_utf8(bytes).map_err(|_| Error::InvalidUtf8)
+        // The reported length includes the null terminator; `from_buffer` trims it.
+        crate::c_string::from_buffer(&buffer, len)
     }
 
     /// Sets a string setting value.
@@ -298,6 +290,17 @@ mod tests {
         Settings::set_network_port_end(test_end_port);
         let retrieved_end_port = Settings::network_port_end();
         assert_eq!(retrieved_end_port, test_end_port);
+    }
+
+    // Regression: the C API reports string lengths *including* the null
+    // terminator, which used to leak a trailing NUL into every returned value.
+    #[test]
+    fn test_settings_string_roundtrip() {
+        Settings::set_discovery_server("omt://testhost:6400").unwrap();
+        let server = Settings::discovery_server().unwrap();
+
+        assert_eq!(server, "omt://testhost:6400");
+        assert!(!server.contains('\0'));
     }
 
     #[test]
