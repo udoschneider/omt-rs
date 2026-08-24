@@ -21,15 +21,20 @@ use std::slice;
 /// **IMPORTANT:** Frames received from `Receiver::receive()` or `Sender::receive_metadata()`
 /// are only valid until the next call to those methods. The lifetime parameter enforces this.
 ///
-/// # Cloning
+/// # Copying
 ///
-/// `MediaFrame` implements `Clone` to perform a **deep copy** of all frame data.
-/// This is useful when using the unsafe API (`receive_unchecked`) and you need to
-/// keep a frame beyond the next receive call.
+/// [`to_static`](MediaFrame::to_static) performs a **deep copy** of all frame
+/// data into a `MediaFrame<'static>`. That is the way to keep a received frame
+/// beyond the next receive call: the copy owns every buffer, so it is no longer
+/// tied to the receiver's borrow.
 ///
-/// **Warning:** Cloning copies all frame data (potentially ~64MB for 4K 16-bit RGBA).
-/// Use sparingly and only when necessary. Consider processing frames immediately
-/// instead of cloning them.
+/// `Clone` performs the same deep copy but returns `Self`, keeping the lifetime
+/// `'a`. Use it to copy a frame alongside the original within one borrow — not
+/// to outlive a receive, which the borrow checker will reject.
+///
+/// **Warning:** Copying duplicates all frame data (potentially ~64MB for 4K
+/// 16-bit RGBA). Use sparingly and only when necessary. Consider processing
+/// frames immediately instead of copying them.
 ///
 /// The frame type can be queried using [`frame_type()`](MediaFrame::frame_type).
 /// Type-specific methods are available in dedicated impl blocks for video, audio, and metadata frames.
@@ -284,6 +289,114 @@ impl<'a> MediaFrame<'a> {
     pub fn frame_metadata(&self) -> &str {
         self.try_frame_metadata().and_then(Result::ok).unwrap_or("")
     }
+
+    /// Deep-copies this frame into one that owns every buffer, detaching it from
+    /// the lifetime `'a`.
+    ///
+    /// This is the way to keep a received frame beyond the next receive call.
+    /// [`Clone`] cannot serve that purpose on the safe path: `clone` returns
+    /// `Self`, so the copy keeps the borrow of the receiver that produced it and
+    /// the borrow checker still refuses the next
+    /// [`receive`](crate::Receiver::receive). Returning `MediaFrame<'static>`
+    /// breaks that link — sound precisely because the returned frame borrows
+    /// nothing.
+    ///
+    /// **Performance warning:** this copies all frame data (potentially ~64MB
+    /// for 4K 16-bit RGBA). Prefer processing frames in place; buffer them only
+    /// when you must.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use omt::{MediaFrame, Receiver, FrameType, PreferredVideoFormat, ReceiveFlags};
+    /// # let mut receiver = Receiver::new("omt://localhost:6400",
+    /// #     FrameType::VIDEO, PreferredVideoFormat::Uyvy, ReceiveFlags::NONE)?;
+    /// let mut frames: Vec<MediaFrame<'static>> = Vec::new();
+    /// for _ in 0..10 {
+    ///     if let Some(frame) = receiver.receive(FrameType::VIDEO, 1000)? {
+    ///         // Detach from the receiver borrow so the next receive is allowed.
+    ///         frames.push(frame.to_static());
+    ///     }
+    /// }
+    /// # Ok::<(), omt::Error>(())
+    /// ```
+    pub fn to_static(&self) -> MediaFrame<'static> {
+        let (ffi, owned) = self.deep_copy();
+        MediaFrame {
+            ffi,
+            _marker: PhantomData,
+            owned: Some(owned),
+        }
+    }
+
+    /// Deep-copies every buffer this frame points at and returns an
+    /// `OMTMediaFrame` whose pointers aim into the returned [`OwnedBuffers`].
+    ///
+    /// Shared by [`to_static`](Self::to_static) and [`Clone`]. No `unsafe` and no
+    /// manual deallocation: `OwnedBuffers` frees everything on drop.
+    ///
+    /// Every pointer/length pair in the result is left **self-consistent**: a
+    /// buffer that is not copied is zeroed to `(null, 0)` rather than inheriting
+    /// the source's pointer or length. That matters twice over:
+    ///
+    /// * No pointer borrowed from the C library (or from an `OwnedMediaFrame`)
+    ///   can survive into the copy — which is what makes handing the result out
+    ///   as `MediaFrame<'static>` sound.
+    /// * `CompressedLength > 0` alongside a null `CompressedData` is a *normal*
+    ///   state for received frames (see `from_ffi_ptr`). Copying that pairing
+    ///   verbatim would leave the copy advertising a compressed payload that
+    ///   isn't there. The safe accessors mask it, but [`as_ffi`](Self::as_ffi) —
+    ///   which is what [`Sender::send`](crate::Sender::send) hands to libomt —
+    ///   does not.
+    fn deep_copy(&self) -> (omt_sys::OMTMediaFrame, OwnedBuffers) {
+        let mut ffi = self.ffi;
+        let mut owned = OwnedBuffers::default();
+
+        // Deep copy the main data buffer.
+        let data = self.data();
+        if data.is_empty() {
+            ffi.Data = std::ptr::null_mut();
+            ffi.DataLength = 0;
+        } else {
+            let mut buf = data.to_vec().into_boxed_slice();
+            ffi.Data = buf.as_mut_ptr() as *mut std::os::raw::c_void;
+            ffi.DataLength = buf.len() as i32;
+            owned.data = Some(buf);
+        }
+
+        // Deep copy the compressed data buffer.
+        let compressed = self.compressed_data();
+        if compressed.is_empty() {
+            ffi.CompressedData = std::ptr::null_mut();
+            ffi.CompressedLength = 0;
+        } else {
+            let mut buf = compressed.to_vec().into_boxed_slice();
+            ffi.CompressedData = buf.as_mut_ptr() as *mut std::os::raw::c_void;
+            ffi.CompressedLength = buf.len() as i32;
+            owned.compressed = Some(buf);
+        }
+
+        // Deep copy the frame metadata buffer. Copy raw bytes rather than going
+        // through the lossy string accessors, which would silently replace
+        // present-but-invalid-UTF-8 metadata with an empty string.
+        match self.frame_metadata_bytes() {
+            Some(metadata) => {
+                let mut bytes = metadata.to_vec();
+                bytes.push(0); // Null terminator
+                let len = bytes.len() as i32;
+                let mut buf = bytes.into_boxed_slice();
+                ffi.FrameMetadata = buf.as_mut_ptr() as *mut std::os::raw::c_void;
+                ffi.FrameMetadataLength = len;
+                owned.metadata = Some(buf);
+            }
+            None => {
+                ffi.FrameMetadata = std::ptr::null_mut();
+                ffi.FrameMetadataLength = 0;
+            }
+        }
+
+        (ffi, owned)
+    }
 }
 
 impl<'a> Clone for MediaFrame<'a> {
@@ -296,72 +409,28 @@ impl<'a> Clone for MediaFrame<'a> {
     ///
     /// # Use Cases
     ///
-    /// This is primarily useful when using `receive_unchecked()` and you need to
-    /// store frames beyond the next receive call:
+    /// Cloning is for copying a frame you intend to keep *alongside* the
+    /// original, within the same borrow.
     ///
-    /// ```no_run
-    /// # use omt::{Receiver, FrameType, PreferredVideoFormat, ReceiveFlags};
-    /// # use std::sync::Arc;
-    /// let receiver = Arc::new(Receiver::new("omt://localhost:6400",
-    ///     FrameType::VIDEO, PreferredVideoFormat::Uyvy, ReceiveFlags::NONE)?);
-    ///
-    /// let mut frames = Vec::new();
-    /// for _ in 0..10 {
-    ///     unsafe {
-    ///         if let Some(frame) = receiver.receive_unchecked(FrameType::VIDEO, 1000)? {
-    ///             // Clone to keep the frame data beyond next receive
-    ///             frames.push(frame.clone());
-    ///         }
-    ///     }
-    /// }
-    /// # Ok::<(), omt::Error>(())
-    /// ```
+    /// To store a frame **beyond the next receive call**, use
+    /// [`to_static`](MediaFrame::to_static) instead. `clone` returns `Self`, so
+    /// the copy inherits the lifetime `'a` — for a frame from
+    /// [`Receiver::receive`](crate::Receiver::receive) that is the receiver's
+    /// `&mut` borrow, and the borrow checker will refuse the next receive while
+    /// the clone is alive. `to_static` returns `MediaFrame<'static>` and does
+    /// not have that problem.
     ///
     /// # Alternatives
     ///
     /// Consider these alternatives before cloning:
     /// - Process frames immediately without storing them
     /// - Use `OwnedMediaFrame` from frame builders for created frames
-    /// - Use the safe API (`receive()`) which prevents this issue at compile time
     fn clone(&self) -> Self {
-        // Copy the FFI structure, then repoint its buffer pointers at freshly
-        // allocated boxes that this clone owns. No `unsafe` and no manual
-        // deallocation: `OwnedBuffers` frees everything on drop.
-        let mut ffi = self.ffi;
-        let mut owned = OwnedBuffers::default();
-
-        // Deep copy the main data buffer.
-        if !self.ffi.Data.is_null() && self.ffi.DataLength > 0 {
-            let mut buf = self.data().to_vec().into_boxed_slice();
-            ffi.Data = buf.as_mut_ptr() as *mut std::os::raw::c_void;
-            owned.data = Some(buf);
-        }
-
-        // Deep copy the compressed data buffer.
-        if !self.ffi.CompressedData.is_null() && self.ffi.CompressedLength > 0 {
-            let mut buf = self.compressed_data().to_vec().into_boxed_slice();
-            ffi.CompressedData = buf.as_mut_ptr() as *mut std::os::raw::c_void;
-            owned.compressed = Some(buf);
-        }
-
-        // Deep copy the frame metadata buffer. Copy raw bytes rather than going
-        // through the lossy string accessors, which would silently replace
-        // present-but-invalid-UTF-8 metadata with an empty string.
-        if let Some(metadata) = self.frame_metadata_bytes() {
-            let mut bytes = metadata.to_vec();
-            bytes.push(0); // Null terminator
-            let len = bytes.len() as i32;
-            let mut buf = bytes.into_boxed_slice();
-            ffi.FrameMetadata = buf.as_mut_ptr() as *mut std::os::raw::c_void;
-            ffi.FrameMetadataLength = len;
-            owned.metadata = Some(buf);
-        }
-
-        Self {
-            ffi,
-            _marker: PhantomData,
-            owned: Some(owned), // Cloned frame owns its data
-        }
+        // Deep copy every buffer into boxes the copy owns, then hand the result
+        // back at this frame's lifetime. `to_static` produces a
+        // `MediaFrame<'static>`, which coerces to `MediaFrame<'a>` — the copy
+        // borrows nothing, so it satisfies any lifetime.
+        self.to_static()
     }
 }
 
@@ -504,6 +573,56 @@ mod tests {
 
         assert_eq!(cloned.frame_metadata_bytes(), Some([0xFF, 0xFE].as_slice()));
         assert!(matches!(cloned.try_frame_metadata(), Some(Err(_))));
+    }
+
+    // Regression: `CompressedLength > 0` with a null `CompressedData` is a
+    // normal state for received frames (see `from_ffi_ptr`). A copy must not
+    // inherit that pairing, or it would advertise a compressed payload it does
+    // not have — invisible through `compressed_data()` but plainly visible to
+    // `as_ffi()`, which is what `Sender::send` passes to libomt.
+    #[test]
+    fn copy_zeroes_length_of_absent_compressed_buffer() {
+        let owned = video_builder(None).build().unwrap();
+        let mut frame = owned.as_media_frame();
+        frame.as_ffi_mut().CompressedLength = 4096;
+        assert!(frame.as_ffi().CompressedData.is_null());
+
+        for copy in [frame.to_static(), frame.clone()] {
+            assert!(copy.as_ffi().CompressedData.is_null());
+            assert_eq!(copy.as_ffi().CompressedLength, 0);
+            assert_eq!(copy.compressed_data(), &[] as &[u8]);
+        }
+    }
+
+    // A copy must likewise never inherit a pointer it did not duplicate: a
+    // non-null buffer paired with a non-positive length is not copied, so the
+    // pointer has to be nulled rather than left aliasing the source. This is
+    // what makes handing the copy out as `MediaFrame<'static>` sound.
+    #[test]
+    fn copy_nulls_pointer_of_empty_buffer() {
+        let owned = video_builder(None).build().unwrap();
+        let mut frame = owned.as_media_frame();
+        frame.as_ffi_mut().DataLength = 0;
+        assert!(!frame.as_ffi().Data.is_null());
+
+        let copy = frame.to_static();
+        assert!(copy.as_ffi().Data.is_null());
+        assert_eq!(copy.as_ffi().DataLength, 0);
+    }
+
+    // `to_static` must outlive the frame it was copied from, including that
+    // frame's backing `OwnedMediaFrame`.
+    #[test]
+    fn to_static_outlives_its_source() {
+        let detached: MediaFrame<'static> = {
+            let owned = video_builder(Some("<meta/>")).build().unwrap();
+            let frame = owned.as_media_frame();
+            frame.to_static()
+        }; // `owned` (and the borrowed frame) dropped here
+
+        assert_eq!(detached.frame_type(), FrameType::VIDEO);
+        assert_eq!(detached.data().len(), 2 * 2 * 4);
+        assert_eq!(detached.frame_metadata(), "<meta/>");
     }
 
     // Regression: a clone must own fresh copies of every buffer rather than

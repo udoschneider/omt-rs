@@ -214,26 +214,13 @@ impl Receiver {
     ///
     /// # Storing Frames
     ///
-    /// If you need to store frames beyond the next receive call, clone them:
+    /// Storing frames beyond the next receive call does **not** require this
+    /// method — [`MediaFrame::to_static`] deep-copies a frame out of the
+    /// receiver's borrow and works on the safe [`receive`](Self::receive) path
+    /// too. See its documentation for the example.
     ///
-    /// ```no_run
-    /// # use omt::{Receiver, FrameType, PreferredVideoFormat, ReceiveFlags};
-    /// # use std::sync::Arc;
-    /// # let receiver = Arc::new(Receiver::new("omt://localhost:6400", FrameType::VIDEO, PreferredVideoFormat::Uyvy, ReceiveFlags::NONE)?);
-    /// let mut frames = Vec::new();
-    /// for _ in 0..10 {
-    ///     unsafe {
-    ///         if let Some(frame) = receiver.receive_unchecked(FrameType::VIDEO, 1000)? {
-    ///             // Clone creates a deep copy - safe to store
-    ///             frames.push(frame.clone());
-    ///         }
-    ///     }
-    /// }
-    /// # Ok::<(), omt::Error>(())
-    /// ```
-    ///
-    /// **Warning:** Cloning copies all frame data (potentially ~64MB for 4K 16-bit RGBA).
-    /// Use sparingly.
+    /// **Warning:** Copying duplicates all frame data (potentially ~64MB for 4K
+    /// 16-bit RGBA). Use sparingly.
     ///
     /// # When to Use This
     ///

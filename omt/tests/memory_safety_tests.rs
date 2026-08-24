@@ -36,6 +36,41 @@ fn test_correct_owned_frame_usage() {
     // Both dropped in correct order
 }
 
+/// Test that `to_static` detaches a frame from the data it was copied from.
+///
+/// This is the operation that lets a received frame outlive the next receive
+/// call. `Clone` cannot do it — it returns `Self`, so the copy keeps the
+/// receiver's `&mut` borrow and the borrow checker rejects the following
+/// `receive`. Buffering copies here (each from a scope that has since exited)
+/// mirrors that pattern without needing a live sender on the network.
+#[test]
+fn test_to_static_outlives_source_frames() {
+    let mut buffered: Vec<omt::MediaFrame<'static>> = Vec::new();
+
+    for i in 0..4u8 {
+        // Each owned frame — and the borrowed frame taken from it — lives only
+        // for this iteration; the detached copy must survive both.
+        let owned = VideoFrameBuilder::new()
+            .codec(Codec::Bgra)
+            .dimensions(4, 4)
+            .data(vec![i; 4 * 4 * 4])
+            .frame_metadata(format!("<frame n=\"{i}\"/>"))
+            .build()
+            .expect("Failed to build frame");
+
+        buffered.push(owned.as_media_frame().to_static());
+    }
+
+    assert_eq!(buffered.len(), 4);
+    for (i, frame) in buffered.iter().enumerate() {
+        assert_eq!(frame.frame_type(), FrameType::VIDEO);
+        assert_eq!(frame.data().len(), 4 * 4 * 4);
+        // Every byte still reads back as written: the copy owns its buffer.
+        assert!(frame.data().iter().all(|&b| b as usize == i));
+        assert_eq!(frame.frame_metadata(), format!("<frame n=\"{i}\"/>"));
+    }
+}
+
 /// Test that audio frame data is properly validated for alignment
 #[test]
 fn test_audio_frame_alignment_validation() {
