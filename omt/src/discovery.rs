@@ -1,7 +1,18 @@
 //! Network discovery for OMT sources.
 
+use crate::error::{Error, Result};
 use std::ffi::CStr;
 use std::sync::Mutex;
+
+/// Largest source count [`Discovery::get_addresses`] will trust from the C API.
+///
+/// `omt_discovery_getaddresses` reports how many pointers its array holds, and
+/// that count is the only bound on how far this crate walks it. A real network
+/// does not carry thousands of simultaneous OMT senders, so a count beyond this
+/// is far more likely to be a corrupt or uninitialized value than a real
+/// result — and trusting it would mean dereferencing arbitrary memory. The
+/// exact figure is a sanity ceiling, not a protocol limit.
+pub const MAX_PLAUSIBLE_SOURCES: i32 = 10_000;
 
 /// Serializes calls to `omt_discovery_getaddresses` and the copying of its
 /// result.
@@ -37,6 +48,30 @@ impl Discovery {
     /// so the first call typically returns an empty or incomplete list as the discovery
     /// process is still initializing.
     ///
+    /// `Ok(vec![])` therefore means "nothing found *yet*", not "nothing exists"
+    /// — callers are expected to poll. It is a normal result, distinct from the
+    /// error below.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::DiscoveryCountImplausible`] when the C library reports a
+    /// source count larger than [`MAX_PLAUSIBLE_SOURCES`]. That is not a busy
+    /// network; it means the returned array is corrupt, and walking `count`
+    /// pointers into it would be a wild read. This used to be reported as an
+    /// empty list, which is exactly the value callers are trained to ignore —
+    /// a hard failure was indistinguishable from a cold discovery cache.
+    ///
+    /// A null array or a non-positive count is *not* an error: that is how the
+    /// C API says "no sources", and it yields `Ok(vec![])`.
+    ///
+    /// # Skipped Entries
+    ///
+    /// Individual entries that are null, or whose bytes are not valid UTF-8, are
+    /// dropped from the result rather than failing the call. One malformed peer
+    /// announcing itself on the network must not blind the caller to every other
+    /// source — but note that such an address is consequently invisible, and
+    /// there is no way to connect to it through this crate.
+    ///
     /// # Memory Safety Note
     ///
     /// The C API returns a `char**` array that is "valid until the next call to getaddresses".
@@ -58,12 +93,12 @@ impl Discovery {
     /// ```no_run
     /// use omt::Discovery;
     ///
-    /// let sources = Discovery::get_addresses();
-    /// for source in sources {
+    /// for source in Discovery::get_addresses()? {
     ///     println!("Found source: {}", source);
     /// }
+    /// # Ok::<(), omt::Error>(())
     /// ```
-    pub fn get_addresses() -> Vec<String> {
+    pub fn get_addresses() -> Result<Vec<String>> {
         // Held until every string has been copied out — see `DISCOVERY_LOCK`.
         // A poisoned lock is recovered rather than propagated: this guard
         // protects no invariant of its own (nothing observable is left
@@ -79,17 +114,21 @@ impl Discovery {
         // returned array cannot be freed out from under the loop below.
         let addresses = unsafe { omt_sys::omt_discovery_getaddresses(&mut count as *mut i32) };
 
-        // Validate inputs from C
+        // A null array or non-positive count is the C API's "no sources": a
+        // normal, expected answer, especially while discovery is still warming
+        // up in its background thread.
         if addresses.is_null() || count <= 0 {
-            return Vec::new();
+            return Ok(Vec::new());
         }
 
-        // Guard against unreasonably large counts that might indicate corruption.
-        // A library must not write to stderr on the caller's behalf, so this is
-        // handled silently: an implausible count is treated as "no results"
-        // rather than trusted enough to index into.
-        if count > 10000 {
-            return Vec::new();
+        // An implausible count means the array is corrupt, not that the network
+        // is busy. Report it instead of returning an empty list: silently
+        // yielding `[]` made a hard failure look identical to a cold cache.
+        if count > MAX_PLAUSIBLE_SOURCES {
+            return Err(Error::DiscoveryCountImplausible {
+                count,
+                max: MAX_PLAUSIBLE_SOURCES,
+            });
         }
 
         let mut result = Vec::with_capacity(count as usize);
@@ -105,12 +144,12 @@ impl Discovery {
                     if let Ok(cstr) = CStr::from_ptr(ptr).to_str() {
                         result.push(cstr.to_string());
                     }
-                    // If UTF-8 validation fails, we skip this entry
+                    // Not valid UTF-8: skip this entry (see "Skipped Entries").
                 }
             }
         }
 
-        result
+        Ok(result)
     }
 }
 
@@ -120,10 +159,11 @@ mod tests {
 
     #[test]
     fn test_discovery_get_addresses() {
-        // This test will only succeed if there are sources on the network
-        let addresses = Discovery::get_addresses();
-        // Should not panic; the list might be empty, but any returned address
-        // must be a non-empty, owned string.
+        // A live network is not required: with no sources this returns an empty
+        // list, which is `Ok` rather than an error. What must hold either way is
+        // that the call succeeds and every address it does return is a
+        // non-empty, owned string.
+        let addresses = Discovery::get_addresses().expect("discovery must not fail on a real host");
         for address in &addresses {
             assert!(!address.is_empty());
         }

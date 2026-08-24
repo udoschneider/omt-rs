@@ -1,107 +1,63 @@
 //! Discovery memory safety tests.
 //!
-//! These tests verify that the Discovery API properly handles memory safety issues,
-//! including the documented memory leak in the underlying C library.
+//! `omt_discovery_getaddresses` returns process-global state that the C library
+//! recycles on the next call, so the hazards here are ownership (the returned
+//! `String`s must be copies, not views into that state) and concurrency (two
+//! overlapping calls must not free the array under each other). These tests
+//! exercise both against the real native library.
+//!
+//! Note what is *not* testable from here: the implementation skips null and
+//! non-UTF-8 entries, but neither can be provoked without substituting a fake C
+//! library, and `String` is valid UTF-8 by construction — so asserting that
+//! returned strings decode proves nothing about the skip logic. Those paths are
+//! covered by inspection, not by a test that cannot fail.
 
-use omt::Discovery;
+use omt::{Discovery, MAX_PLAUSIBLE_SOURCES};
 
-/// Test that Discovery::get_addresses() works and returns valid strings
+/// A discovery sweep must succeed on a real host whether or not anything is on
+/// the network: "no sources" is `Ok(vec![])`, and only a corrupt result from the
+/// C library is an error.
 #[test]
 fn test_discovery_basic() {
-    let addresses = Discovery::get_addresses();
+    let addresses = Discovery::get_addresses().expect("discovery must not fail on a real host");
 
-    // Should not panic or crash
-    // May be empty if no sources are available on the network
-    // addresses.len() is always >= 0 (usize), so just verify it doesn't panic
-
-    // Verify all returned strings are valid UTF-8 (already validated by the implementation)
     for addr in &addresses {
-        assert!(!addr.is_empty() || addresses.is_empty());
+        assert!(!addr.is_empty(), "discovery returned an empty address");
     }
 }
 
-/// Test that multiple calls to get_addresses() work correctly
+/// Repeated calls must keep succeeding.
 ///
-/// Note: The underlying C library may leak memory on repeated calls.
-/// This is a known limitation documented in the Rust wrapper.
+/// Note: the underlying C library may leak memory on each call. That is a
+/// documented limitation of libomt, not of this wrapper.
 #[test]
 fn test_discovery_multiple_calls() {
-    // First call
-    let addresses1 = Discovery::get_addresses();
-
-    // Second call - the C library may leak memory from the first call
-    let addresses2 = Discovery::get_addresses();
-
-    // Both calls should complete without crashing
-    // Note: .len() is always >= 0 for Vec, these calls just verify no crash
-    let _ = addresses1.len();
-    let _ = addresses2.len();
-
-    // Third call to stress test
-    let addresses3 = Discovery::get_addresses();
-    let _ = addresses3.len();
-}
-
-/// Test that Discovery handles empty results gracefully
-#[test]
-fn test_discovery_empty_result() {
-    let addresses = Discovery::get_addresses();
-
-    // If no sources are found, should return empty vector, not crash
-    if addresses.is_empty() {
-        // This is valid - no sources on the network
-        assert_eq!(addresses.len(), 0);
+    for i in 0..3 {
+        Discovery::get_addresses().unwrap_or_else(|e| panic!("discovery call {i} failed: {e}"));
     }
 }
 
-/// Test that Discovery strings are properly owned and don't have dangling pointers
+/// The returned `String`s must be owned copies, not views into the C library's
+/// buffer.
+///
+/// This is the core ownership guarantee: the C array is "valid until the next
+/// call to getaddresses", so a later call is exactly what would invalidate a
+/// borrowed view. Every byte of the *first* result is re-read afterwards.
 #[test]
 fn test_discovery_string_ownership() {
-    let addresses = Discovery::get_addresses();
+    let addresses = Discovery::get_addresses().expect("first discovery sweep");
+    let snapshot: Vec<String> = addresses.clone();
 
-    // Call get_addresses again, which may invalidate the C library's internal buffers
-    let _addresses2 = Discovery::get_addresses();
+    // Recycle the C library's internal array out from under the first result.
+    let _ = Discovery::get_addresses().expect("second discovery sweep");
+    let _ = Discovery::get_addresses().expect("third discovery sweep");
 
-    // The first set of addresses should still be valid because they were copied
+    // The first result must be byte-for-byte intact. Reading every byte is what
+    // would trip a sanitizer (or crash) had the strings been borrowed views.
+    assert_eq!(addresses, snapshot, "addresses changed after later sweeps");
     for addr in &addresses {
-        // Access each string - this would crash if they were dangling pointers
-        let _len = addr.len();
-        let _chars: Vec<char> = addr.chars().collect();
-
-        // Verify the string is valid UTF-8
-        assert!(std::str::from_utf8(addr.as_bytes()).is_ok());
-    }
-}
-
-/// Test that Discovery handles null pointers in the array gracefully
-#[test]
-fn test_discovery_null_handling() {
-    // The implementation should skip null pointers in the returned array
-    let addresses = Discovery::get_addresses();
-
-    // All returned addresses should be non-empty or the array should be empty
-    for addr in &addresses {
-        assert!(
-            !addr.is_empty(),
-            "Discovery should not return empty strings from null pointers"
-        );
-    }
-}
-
-/// Test that Discovery strings can be cloned and moved
-#[test]
-fn test_discovery_string_cloning() {
-    let addresses = Discovery::get_addresses();
-
-    if !addresses.is_empty() {
-        let first = addresses[0].clone();
-
-        // Call get_addresses again to potentially invalidate C buffers
-        let _new_addresses = Discovery::get_addresses();
-
-        // The cloned string should still be valid
-        let _len = first.len();
-        assert!(!first.is_empty());
+        assert!(!addr.is_empty());
+        assert_eq!(addr.as_bytes().iter().filter(|&&b| b == 0).count(), 0);
     }
 }
 
@@ -135,7 +91,8 @@ fn test_discovery_thread_safety() {
             thread::spawn(move || {
                 barrier.wait();
                 for _ in 0..ITERATIONS {
-                    for address in Discovery::get_addresses() {
+                    let addresses = Discovery::get_addresses().expect("concurrent discovery sweep");
+                    for address in addresses {
                         // Touch every byte: a dangling copy would surface here.
                         assert!(!address.is_empty());
                         assert!(std::str::from_utf8(address.as_bytes()).is_ok());
@@ -150,26 +107,24 @@ fn test_discovery_thread_safety() {
     }
 }
 
-/// Test that Discovery handles very large result counts defensively
+/// A successful sweep never yields more entries than the count ceiling the
+/// implementation is willing to trust — beyond it the array is treated as
+/// corrupt and reported as an error rather than walked.
 #[test]
-fn test_discovery_defensive_checks() {
-    // The implementation includes a guard against suspiciously large counts (> 10000)
-    // This test verifies the function returns successfully even if the C library
-    // returns corrupted data
+fn test_discovery_respects_count_ceiling() {
+    let addresses = Discovery::get_addresses().expect("discovery must not fail on a real host");
 
-    let addresses = Discovery::get_addresses();
-
-    // Should never return more than 10000 entries due to safety check
     assert!(
-        addresses.len() <= 10000,
-        "Discovery should limit results to prevent memory issues"
+        addresses.len() <= MAX_PLAUSIBLE_SOURCES as usize,
+        "discovery returned {} entries, above the {MAX_PLAUSIBLE_SOURCES} ceiling",
+        addresses.len()
     );
 }
 
 /// Test that Discovery addresses contain expected format
 #[test]
 fn test_discovery_address_format() {
-    let addresses = Discovery::get_addresses();
+    let addresses = Discovery::get_addresses().expect("discovery must not fail on a real host");
 
     for addr in &addresses {
         // Addresses should be either:
@@ -188,60 +143,48 @@ fn test_discovery_address_format() {
     }
 }
 
-/// Stress test: Many repeated calls to check for memory leaks
-///
-/// Note: This will leak memory in the underlying C library.
-/// This is a known limitation that is documented.
-#[test]
-#[ignore] // Ignored by default because it intentionally leaks memory
-fn test_discovery_repeated_calls_stress_test() {
-    // Make many calls to see if there are any crashes or corruption
-    for i in 0..100 {
-        let addresses = Discovery::get_addresses();
-
-        // Verify results are still valid (len() always >= 0 for Vec)
-        let _ = addresses.len();
-
-        if i % 10 == 0 {
-            // Occasionally verify string validity
-            for addr in &addresses {
-                let _ = addr.len();
-                let _ = addr.as_bytes();
-            }
-        }
-    }
-}
-
-/// Test that Discovery handles UTF-8 validation failures gracefully
-#[test]
-fn test_discovery_invalid_utf8_handling() {
-    let addresses = Discovery::get_addresses();
-
-    // All returned strings should be valid UTF-8
-    // Invalid UTF-8 from C should be skipped by the implementation
-    for addr in &addresses {
-        assert!(
-            std::str::from_utf8(addr.as_bytes()).is_ok(),
-            "Discovery should only return valid UTF-8 strings"
-        );
-    }
-}
-
-/// Test that Discovery can be used in async contexts
+/// The result must be movable across threads, so a discovery sweep can run off
+/// the caller's thread. Asserted statically as well as exercised: the static
+/// bound is what actually fails the build if `Send` is ever lost.
 #[cfg(not(miri))]
 #[test]
-fn test_discovery_async_compatible() {
+fn test_discovery_result_is_send() {
     use std::sync::mpsc;
     use std::thread;
 
-    let (tx, rx) = mpsc::channel();
+    fn assert_send<T: Send>() {}
+    assert_send::<omt::Result<Vec<String>>>();
 
+    let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let addresses = Discovery::get_addresses();
-        tx.send(addresses).expect("Failed to send");
+        tx.send(Discovery::get_addresses()).expect("Failed to send");
     });
 
-    let addresses = rx.recv().expect("Failed to receive");
-    // len() is always >= 0 for Vec, just verify we received successfully
-    let _ = addresses.len();
+    let addresses = rx
+        .recv()
+        .expect("Failed to receive")
+        .expect("discovery must not fail on a real host");
+    for addr in &addresses {
+        assert!(!addr.is_empty());
+    }
+}
+
+/// Stress test: many repeated calls, checking for crashes or corruption.
+///
+/// Note: this will leak memory in the underlying C library — a known, documented
+/// limitation — which is why it is ignored by default.
+#[test]
+#[ignore] // Ignored by default because it intentionally leaks memory
+fn test_discovery_repeated_calls_stress_test() {
+    for i in 0..100 {
+        let addresses =
+            Discovery::get_addresses().unwrap_or_else(|e| panic!("sweep {i} failed: {e}"));
+
+        // Read every byte of every address: corruption from a recycled buffer
+        // would surface here rather than as a silent wrong answer.
+        for addr in &addresses {
+            assert!(!addr.is_empty());
+            assert!(std::str::from_utf8(addr.as_bytes()).is_ok());
+        }
+    }
 }

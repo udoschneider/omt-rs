@@ -41,6 +41,18 @@ use std::collections::HashMap;
 /// How long to wait for a source's first video frame before giving up on it.
 const PROBE_TIMEOUT_MS: i32 = 1000;
 
+/// One discovery sweep. Returns `None` — after reporting the cause — when the
+/// lookup itself failed, which is distinct from finding no sources.
+fn scan() -> Option<Vec<String>> {
+    match Discovery::get_addresses() {
+        Ok(sources) => Some(sources),
+        Err(err) => {
+            eprintln!("Error: discovery failed: {err}");
+            None
+        }
+    }
+}
+
 fn main() {
     println!("Scanning network for OMT sources...\n");
 
@@ -49,13 +61,19 @@ fn main() {
     let mut probed: HashMap<String, String> = HashMap::new();
 
     loop {
-        let mut sources = Discovery::get_addresses();
+        // A discovery failure is reported and retried rather than mistaken for
+        // an empty network — this loop runs forever, so it must not go quiet.
+        let Some(mut sources) = scan() else {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            continue;
+        };
 
         // Retry after 2 seconds on the first attempt if no sources found
         if first_attempt && sources.is_empty() {
             println!("No sources found on first attempt, retrying in 2 seconds...");
             std::thread::sleep(std::time::Duration::from_secs(2));
-            sources = Discovery::get_addresses();
+            let Some(retried) = scan() else { continue };
+            sources = retried;
             first_attempt = false;
         }
 

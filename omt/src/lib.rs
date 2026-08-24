@@ -195,7 +195,7 @@ mod tally;
 mod types;
 mod video_conversion;
 
-pub use discovery::Discovery;
+pub use discovery::{Discovery, MAX_PLAUSIBLE_SOURCES};
 pub use error::{Error, Result};
 pub use frame::MediaFrame;
 pub use frame_builder::{

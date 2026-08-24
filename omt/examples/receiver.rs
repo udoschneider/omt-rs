@@ -26,12 +26,12 @@ use omt::{Discovery, FrameType, PreferredVideoFormat, ReceiveFlags, Receiver};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Discover available sources
     println!("Discovering OMT sources...");
-    let mut sources = Discovery::get_addresses();
+    let mut sources = Discovery::get_addresses()?;
 
     if sources.is_empty() {
         println!("No sources found on first attempt, retrying in 2 seconds...");
         std::thread::sleep(std::time::Duration::from_secs(2));
-        sources = Discovery::get_addresses();
+        sources = Discovery::get_addresses()?;
     }
 
     if sources.is_empty() {

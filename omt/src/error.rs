@@ -48,6 +48,20 @@ pub enum Error {
         reason: String,
     },
 
+    /// Network discovery returned a result the C library cannot have meant.
+    ///
+    /// Reported when `omt_discovery_getaddresses` claims a source count far
+    /// beyond anything a real network produces, which indicates the returned
+    /// array is corrupt rather than merely empty. Indexing into it on that
+    /// promise would be a wild read, so the whole result is rejected.
+    #[error("discovery reported an implausible source count of {count} (maximum {max})")]
+    DiscoveryCountImplausible {
+        /// The count the C library reported.
+        count: i32,
+        /// The largest count this crate is willing to trust.
+        max: i32,
+    },
+
     /// Generic error with message.
     #[error("{0}")]
     Other(String),
