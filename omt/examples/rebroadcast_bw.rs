@@ -123,10 +123,21 @@ fn main() {
                 let uyvy_data = frame.data();
 
                 // Convert to grayscale UYVY by setting U and V to 128 (neutral)
-                let bw_uyvy = uyvy_to_grayscale(uyvy_data, width, height, stride);
+                let Some(bw_uyvy) = uyvy_to_grayscale(uyvy_data, width, height, stride) else {
+                    eprintln!(
+                        "Warning: frame buffer ({} bytes) too small for {}x{} at stride {}; skipping",
+                        uyvy_data.len(),
+                        width,
+                        height,
+                        stride
+                    );
+                    continue;
+                };
 
-                // Build and send the grayscale frame
-                if let Ok(owned_frame) = VideoFrameBuilder::new()
+                // Build and send the grayscale frame. Both steps report their
+                // errors: swallowing them here made a mis-sized buffer look like
+                // a working rebroadcast that silently sent nothing.
+                match VideoFrameBuilder::new()
                     .codec(Codec::Uyvy)
                     .dimensions(width, height)
                     .stride(stride)
@@ -138,10 +149,13 @@ fn main() {
                     .data(bw_uyvy)
                     .build()
                 {
-                    let media_frame = owned_frame.as_media_frame();
-                    if let Err(e) = sender.send(&media_frame) {
-                        eprintln!("Error: Failed to send frame: {}", e);
+                    Ok(owned_frame) => {
+                        let media_frame = owned_frame.as_media_frame();
+                        if let Err(e) = sender.send(&media_frame) {
+                            eprintln!("Error: Failed to send frame: {}", e);
+                        }
                     }
+                    Err(e) => eprintln!("Error: Failed to build grayscale frame: {}", e),
                 }
             }
             Ok(None) => {
@@ -171,43 +185,30 @@ fn extract_stream_name(address: &str) -> Option<String> {
 ///
 /// To create grayscale, we keep the Y (luma) values and set U and V to 128,
 /// which represents zero chrominance (no color information).
-fn uyvy_to_grayscale(uyvy_data: &[u8], width: i32, height: i32, stride: i32) -> Vec<u8> {
-    let height = height as usize;
-    let stride = stride as usize;
-    let width = width as usize;
+///
+/// The output keeps the source row pitch, padding included, so it still matches
+/// the `stride` the rebuilt frame declares. Returns `None` if the buffer is too
+/// small for the declared geometry.
+fn uyvy_to_grayscale(uyvy_data: &[u8], width: i32, height: i32, stride: i32) -> Option<Vec<u8>> {
+    let width = usize::try_from(width).ok()?;
+    let height = usize::try_from(height).ok()?;
+    let stride = usize::try_from(stride).ok()?;
 
-    // Calculate the actual data size we need
-    let data_size = height * stride;
-    let mut output = Vec::with_capacity(data_size);
+    // Copy the whole plane — padding bytes included — then neutralize chroma in
+    // place. Rebuilding the rows from scratch is what previously dropped the
+    // inter-row padding, leaving a buffer too short for the declared stride.
+    let plane = stride.checked_mul(height)?;
+    let mut output = uyvy_data.get(..plane)?.to_vec();
 
-    // Process each row
-    for y in 0..height {
-        let row_start = y * stride;
-        let row_end = row_start + (width * 2).min(stride);
-
-        if row_end <= uyvy_data.len() {
-            let row = &uyvy_data[row_start..row_end];
-
-            // Process UYVY macropixels (4 bytes at a time)
-            for chunk in row.as_chunks::<4>().0 {
-                output.push(128); // U = 128 (neutral)
-                output.push(chunk[1]); // Y0 (preserve luma)
-                output.push(128); // V = 128 (neutral)
-                output.push(chunk[3]); // Y1 (preserve luma)
-            }
-
-            // Handle any remaining bytes in the row (padding)
-            let processed = (row.len() / 4) * 4;
-            if processed < stride {
-                output.extend_from_slice(&row[processed..]);
-            }
-        } else {
-            // Safety: if we don't have enough data, fill with neutral values
-            for _ in 0..(stride / 4) {
-                output.extend_from_slice(&[128, 16, 128, 16]); // Neutral gray
-            }
+    // Live pixels occupy `width * 2` bytes per row; anything beyond that is
+    // padding and is left exactly as it arrived.
+    let live = width.checked_mul(2)?.min(stride);
+    for row in output.chunks_mut(stride) {
+        for macropixel in row[..live].as_chunks_mut::<4>().0 {
+            macropixel[0] = 128; // U = 128 (neutral)
+            macropixel[2] = 128; // V = 128 (neutral)
         }
     }
 
-    output
+    Some(output)
 }
