@@ -378,8 +378,13 @@ impl Receiver {
             );
         }
 
-        // Check if info is empty
-        if ffi_info.ProductName[0] == 0 {
+        // "No information" is reported as an all-empty struct; any populated
+        // field means real information even if the product name is blank.
+        let is_empty = ffi_info.ProductName[0] == 0
+            && ffi_info.Manufacturer[0] == 0
+            && ffi_info.Version[0] == 0;
+
+        if is_empty {
             Ok(None)
         } else {
             Ok(Some(SenderInfo::from_ffi(&ffi_info)?))
