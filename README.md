@@ -17,11 +17,16 @@ OMT is designed for professional broadcast and media production workflows where 
 
 ## Quick Start
 
+> **Not yet on crates.io.** Both crates are still marked `publish = false`
+> while the API settles, so there is no `crates.io` release or `docs.rs` page
+> yet. Depend on the repository directly, and build the API docs locally with
+> `cargo doc --workspace --no-deps --open`.
+
 Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-omt = "0.1"
+omt = { git = "https://github.com/udoschneider/omt-rs" }
 ```
 
 ### Simple Example
@@ -31,7 +36,7 @@ use omt::{Discovery, Receiver, FrameType, PreferredVideoFormat, ReceiveFlags};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Discover sources on the network
-    let sources = Discovery::get_addresses();
+    let sources = Discovery::get_addresses()?;
     println!("Found {} sources", sources.len());
     
     if let Some(address) = sources.first() {
@@ -74,7 +79,7 @@ High-level, safe, and ergonomic Rust bindings for OMT.
 - 🎨 **Multiple codecs**: Support for various video and audio formats
 - 🏗️ **Frame builders**: Ergonomic API for creating frames
 
-**Documentation:** [omt README](omt/README.md) | [docs.rs](https://docs.rs/omt)
+**Documentation:** [omt README](omt/README.md) | `cargo doc -p omt --open`
 
 ### omt-sys
 
@@ -88,7 +93,7 @@ Low-level FFI bindings generated from the OMT C library headers.
 
 **⚠️ Note:** Most users should use the high-level `omt` crate instead.
 
-**Documentation:** [omt-sys README](omt-sys/README.md) | [docs.rs](https://docs.rs/omt-sys)
+**Documentation:** [omt-sys README](omt-sys/README.md) | `cargo doc -p omt-sys --open`
 
 ## Prerequisites
 
@@ -279,7 +284,7 @@ See [METADATA.md](omt-sys/docs/METADATA.md) for specifications.
 - **[omt-sys crate](omt-sys/README.md)**: Low-level FFI documentation
 - **[Metadata Specification](omt-sys/docs/METADATA.md)**: XML metadata formats
 - **[Examples](omt/examples/)**: Working code examples
-- **[API Documentation](https://docs.rs/omt)**: Generated API docs
+- **API documentation**: build locally with `cargo doc --workspace --no-deps --open` (not yet published to docs.rs)
 
 ## Project Structure
 
@@ -379,9 +384,22 @@ See [CLAUDE.md](CLAUDE.md) for detailed development guidelines.
 
 ## Platform Support
 
-- ✅ Linux (x86_64, aarch64)
-- ✅ macOS (x86_64, Apple Silicon)
-- ✅ Windows (x86_64)
+What each platform is actually verified to do, and by which CI job:
+
+| Platform | `libomt` source | Build | Test | CI job |
+|---|---|---|---|---|
+| Linux x86_64 | built from source | ✅ | ✅ | `build-and-test` |
+| macOS (x86_64, Apple Silicon) | pinned prebuilt download | ✅ | ✅ | `macos-build-and-test` |
+| Linux aarch64 | — | type-check only | ❌ | `cross-arm64` |
+| Windows (x86_64, arm64) | pinned prebuilt download | ❌ | ❌ | none |
+
+Linux aarch64 is only `cargo check`ed — it re-runs `bindgen` for the target to
+catch `c_char` signedness regressions, but no aarch64 `libomt` is linked or run.
+
+Windows is *supported by the build script* (both x86_64 and arm64 prebuilt
+binaries are downloaded and linked) but is **not covered by CI**: the discovery
+tests depend on Avahi-style mDNS behavior that has not been validated on hosted
+Windows runners. Treat it as untested.
 
 ## Performance
 

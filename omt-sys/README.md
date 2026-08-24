@@ -4,8 +4,6 @@ Low-level FFI bindings for [Open Media Transport (OMT)](https://github.com/openm
 
 **Note:** This is an **unofficial, third-party** Rust wrapper. It is not affiliated with or endorsed by the Open Media Transport project.
 
-[![Crates.io](https://img.shields.io/crates/v/omt-sys.svg)](https://crates.io/crates/omt-sys)
-[![Documentation](https://docs.rs/omt-sys/badge.svg)](https://docs.rs/omt-sys)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 ## Overview
@@ -31,8 +29,13 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-omt-sys = "0.1"
+omt-sys = { git = "https://github.com/udoschneider/omt-rs" }
 ```
+
+> **Not yet on crates.io.** Both crates are still marked `publish = false`
+> while the API settles, so there is no `crates.io` release or `docs.rs` page
+> yet. Depend on the repository directly, and build the API docs locally with
+> `cargo doc --workspace --no-deps --open`.
 
 ### Prerequisites
 

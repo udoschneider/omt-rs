@@ -4,10 +4,7 @@ High-level, safe, and idiomatic Rust bindings for the [Open Media Transport (OMT
 
 **Note:** This is an **unofficial, third-party** Rust wrapper. It is not affiliated with or endorsed by the Open Media Transport project.
 
-[![Crates.io](https://img.shields.io/crates/v/omt.svg)](https://crates.io/crates/omt)
-[![Documentation](https://docs.rs/omt/badge.svg)](https://docs.rs/omt)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
-[![Safety](https://img.shields.io/badge/safety-documented-blue.svg)](https://docs.rs/omt)
 
 ## Overview
 
@@ -30,8 +27,13 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-omt = "0.1"
+omt = { git = "https://github.com/udoschneider/omt-rs" }
 ```
+
+> **Not yet on crates.io.** Both crates are still marked `publish = false`
+> while the API settles, so there is no `crates.io` release or `docs.rs` page
+> yet. Depend on the repository directly, and build the API docs locally with
+> `cargo doc --workspace --no-deps --open`.
 
 **Note**: This crate requires the OMT C library to be installed on your system. See the [OMT repository](https://github.com/openmediatransport/libomt) for installation instructions.
 
@@ -42,11 +44,13 @@ omt = "0.1"
 ```rust
 use omt::Discovery;
 
-fn main() {
-    let sources = Discovery::get_addresses();
-    for source in sources {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Discovery runs in a background thread, so the first sweep is usually
+    // empty — poll until sources appear.
+    for source in Discovery::get_addresses()? {
         println!("Found: {}", source);
     }
+    Ok(())
 }
 ```
 

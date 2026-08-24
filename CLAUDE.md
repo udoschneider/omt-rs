@@ -31,6 +31,8 @@ cargo doc --all --no-deps --open
 
 Doc examples are compiled and run by `cargo test`, so keep `///` code blocks valid (or mark them `no_run`/`ignore`).
 
+The untrusted-input surface has a fuzz harness in `omt/src/fuzzing.rs` (feature `unstable-fuzzing`). Its unit tests sweep adversarial frame headers on every `cargo test`; `cargo +nightly fuzz run media_frame` drives the same function deeper via the out-of-workspace `fuzz/` crate. Extend `fuzz_media_frame` rather than writing a parallel harness.
+
 ## Architecture
 
 Three layers, bottom to top:
@@ -53,11 +55,15 @@ Three layers, bottom to top:
 
 - **Discovery (`discovery.rs`)** runs in a C background thread, so the *first* `get_addresses()` call typically returns an empty/incomplete list — callers must poll/retry (examples do). Strings are copied into owned `String`s to avoid the C API's "valid until next call" dangling-pointer hazard.
 
-## Conventions (from AGENTS.md)
+## Conventions
 
 - **No panics in library code** — no `unwrap()`/`expect()` outside tests. Use `Result<T, E>`; `omt` uses `thiserror`, binaries/examples use `anyhow`.
-- **Every `unsafe` block needs a `// SAFETY:` comment** explaining why it holds. `unsafe` is confined to FFI boundaries and the frame lifetime machinery.
+- **Every `unsafe` block needs a `// SAFETY:` comment** explaining why it holds. `unsafe` is confined to FFI boundaries and the frame lifetime machinery. Never hand-write an `unsafe impl Send`/`Sync` the auto impls already provide — it grants nothing and stands ready to absorb a future field that is neither.
+- **Frame headers are attacker-controlled** (`width`/`height`/`stride`/`channels`). Size arithmetic on them uses checked/saturating ops, and `video_conversion::required_input_len` is the single gate every converter caller must pass first. Accepting a frame there is a promise the converter can decode it — keep the two in agreement.
+- **Flag types retain unknown bits** (`from_bits_retain`): libomt may gain flags this crate does not model, and dropping them misreports the value.
+- Public error enums are `#[non_exhaustive]`.
 - Public items need `///` docs; modules need `//!` headers. `omt/src/lib.rs` sets `#![warn(missing_docs)]`.
 - Conventional Commits (`feat:`, `fix:`, `docs:`). `Cargo.lock` is committed (workspace).
-- Unit tests in `#[cfg(test)] mod tests` in-file; integration tests in `omt/tests/` (see `memory_safety_tests.rs`, `discovery_safety_tests.rs` — safety invariants are tested explicitly).
+- Unit tests in `#[cfg(test)] mod tests` in-file; integration tests in `omt/tests/` (see `memory_safety_tests.rs`, `discovery_safety_tests.rs` — safety invariants are tested explicitly). Prefer a `compile_fail` doctest over prose when a guarantee can be compiled.
+- **A regression test must fail against the old behavior** — check that it does. Avoid assertions that cannot fail (`assert!(v.len() >= 0)`); if a property is not testable, say so in a comment instead.
 - **Do not create summary/changelog files** documenting your changes unless explicitly asked.
